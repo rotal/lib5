@@ -93,18 +93,11 @@ export const NoiseNode = defineNode({
       ],
     },
     {
-      id: 'width',
-      name: 'Width',
-      type: 'number',
-      default: 512,
-      constraints: { min: 1, max: 4096, step: 1 },
-    },
-    {
-      id: 'height',
-      name: 'Height',
-      type: 'number',
-      default: 512,
-      constraints: { min: 1, max: 4096, step: 1 },
+      id: 'size',
+      name: 'Size',
+      type: 'size',
+      default: { width: 512, height: 512, locked: false },
+      sizeConstraints: { minWidth: 1, maxWidth: 4096, minHeight: 1, maxHeight: 4096, step: 1 },
     },
     {
       id: 'scale',
@@ -144,8 +137,9 @@ export const NoiseNode = defineNode({
 
   async execute(inputs, params, context) {
     const noiseType = params.noiseType as string;
-    const width = params.width as number;
-    const height = params.height as number;
+    const size = params.size as { width: number; height: number };
+    const width = size.width;
+    const height = size.height;
     const scale = params.scale as number;
     const octaves = params.octaves as number;
     const persistence = params.persistence as number;

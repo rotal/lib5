@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { GraphEngine, createGraphEngine, ExecutionCallbacks } from '../core/graph/GraphEngine';
 import { Graph, NodeRuntimeState } from '../types';
-import { PortValue } from '../types/data';
+import { PortValue, FloatImage } from '../types/data';
+import { GPUTexture } from '../types/gpu';
 
 interface ExecutionState {
   engine: GraphEngine | null;
@@ -22,6 +23,7 @@ interface ExecutionActions {
   clearCache: () => void;
   markNodesDirty: (nodeIds: string[]) => void;
   getNodeOutput: (nodeId: string) => Record<string, PortValue> | undefined;
+  downloadGPUTexture: (texture: GPUTexture) => FloatImage | null;
 }
 
 export const useExecutionStore = create<ExecutionState & ExecutionActions>((set, get) => ({
@@ -175,5 +177,20 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>((set,
 
   getNodeOutput: (nodeId) => {
     return get().nodeOutputs[nodeId];
+  },
+
+  downloadGPUTexture: (texture) => {
+    const { engine } = get();
+    if (!engine) return null;
+
+    const gpuContext = engine.getGPUContext();
+    if (!gpuContext) return null;
+
+    try {
+      return gpuContext.downloadTexture(texture);
+    } catch (error) {
+      console.error('Failed to download GPU texture:', error);
+      return null;
+    }
   },
 }));

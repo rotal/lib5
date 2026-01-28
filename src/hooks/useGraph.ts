@@ -19,10 +19,15 @@ export function useGraph() {
       executionStore.initEngine(graphStore.graph);
       historyStore.saveState(graphStore.graph, 'Initial state');
       isInitialized.current = true;
+
+      // Auto-execute on load if live edit is enabled
+      if (uiStore.liveEdit) {
+        executionStore.execute();
+      }
     } else {
       executionStore.updateEngineGraph(graphStore.graph);
     }
-  }, [graphStore.graph, executionStore, historyStore]);
+  }, [graphStore.graph, executionStore, historyStore, uiStore.liveEdit]);
 
   // Add node with history
   const addNode = useCallback((type: string, x: number, y: number) => {

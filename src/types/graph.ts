@@ -44,6 +44,11 @@ export interface SerializedGraph {
   nodes: NodeInstance[];
   edges: Edge[];
   viewport: ViewportState;
+  preview?: {
+    slots: [string | null, string | null, string | null];
+    backgroundActive: boolean;
+    foregroundSlot: 0 | 1 | null;
+  };
 }
 
 /**

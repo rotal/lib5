@@ -50,11 +50,9 @@ export function GraphCanvas() {
     updateConnectionDrag,
     endConnectionDrag,
     cancelConnectionDrag,
-    updateNodeParameter,
-    commitParameterChange,
   } = useGraph();
 
-  const { showContextMenu } = useUiStore();
+  const { showContextMenu, setPreviewSlot } = useUiStore();
 
   const [portPositions, setPortPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
   const edgesRef = useRef<SVGSVGElement>(null);
@@ -273,16 +271,16 @@ export function GraphCanvas() {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
-  // Tab key handler to open search popup
+  // Tab key handler to open search popup and 1/2/3 for preview slots
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if focus is in an input
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+
       // Tab key opens node search popup
       if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        // Don't trigger if focus is in an input
-        if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
-          return;
-        }
-
         e.preventDefault();
         const worldPos = screenToWorld(lastMousePos.current.x, lastMousePos.current.y);
 
@@ -294,11 +292,21 @@ export function GraphCanvas() {
           worldY: worldPos.y,
         });
       }
+
+      // 1/2/3 keys assign selected node to preview slot
+      if ((e.key === '1' || e.key === '2' || e.key === '3') && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        // Only if a single node is selected
+        if (selectedNodeIds.size === 1) {
+          const nodeId = Array.from(selectedNodeIds)[0];
+          const slotIndex = (parseInt(e.key) - 1) as 0 | 1 | 2;
+          setPreviewSlot(slotIndex, nodeId);
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [screenToWorld]);
+  }, [screenToWorld, selectedNodeIds, setPreviewSlot]);
 
   // Handle node selection from search popup
   const handleNodeSelect = useCallback((nodeType: string) => {
@@ -406,8 +414,6 @@ export function GraphCanvas() {
             onMoveEnd={commitNodeMove}
             onConnectionStart={handleConnectionStart}
             onConnectionEnd={handleConnectionEnd}
-            onParameterChange={updateNodeParameter}
-            onParameterCommit={commitParameterChange}
           />
         ))}
       </div>

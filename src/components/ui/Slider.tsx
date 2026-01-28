@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 
 interface SliderProps {
   value: number;
@@ -26,6 +26,8 @@ export function Slider({
   className = '',
 }: SliderProps) {
   const isDragging = useRef(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = parseFloat(e.target.value);
@@ -47,6 +49,40 @@ export function Slider({
     }
   }, [value, onChangeEnd]);
 
+  // Handle clicking on the value to edit
+  const handleValueClick = useCallback(() => {
+    if (disabled) return;
+    setEditValue(step < 1 ? value.toFixed(2) : String(value));
+    setIsEditing(true);
+  }, [value, step, disabled]);
+
+  // Handle input change while editing
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setEditValue(e.target.value);
+  }, []);
+
+  // Commit the edited value
+  const commitEdit = useCallback(() => {
+    const parsed = parseFloat(editValue);
+    if (!isNaN(parsed)) {
+      const clamped = Math.max(min, Math.min(max, parsed));
+      onChange(clamped);
+      if (onChangeEnd) {
+        onChangeEnd(clamped);
+      }
+    }
+    setIsEditing(false);
+  }, [editValue, min, max, onChange, onChangeEnd]);
+
+  // Handle key press in input
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      commitEdit();
+    } else if (e.key === 'Escape') {
+      setIsEditing(false);
+    }
+  }, [commitEdit]);
+
   // Calculate percentage for custom track fill
   const percentage = ((value - min) / (max - min)) * 100;
 
@@ -56,9 +92,25 @@ export function Slider({
         <div className="flex items-center justify-between text-xs text-editor-text-dim">
           {label && <span>{label}</span>}
           {showValue && (
-            <span className="font-mono">
-              {step < 1 ? value.toFixed(2) : value}
-            </span>
+            isEditing ? (
+              <input
+                type="text"
+                value={editValue}
+                onChange={handleInputChange}
+                onBlur={commitEdit}
+                onKeyDown={handleKeyDown}
+                autoFocus
+                className="w-16 px-1 py-0 text-right font-mono text-xs bg-editor-surface border border-editor-accent rounded outline-none text-editor-text"
+              />
+            ) : (
+              <span
+                className="font-mono cursor-text hover:text-editor-text px-1 rounded hover:bg-editor-surface-light"
+                onClick={handleValueClick}
+                title="Click to edit"
+              >
+                {step < 1 ? value.toFixed(2) : value}
+              </span>
+            )
           )}
         </div>
       )}

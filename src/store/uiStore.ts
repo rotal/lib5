@@ -21,7 +21,14 @@ interface UiState {
   modalData: unknown;
   paletteSearchQuery: string;
   expandedCategories: Set<string>;
-  previewNodeId: string | null;
+  // Preview slots (3 slots, index 0-2)
+  // Slots 0-1 = foreground (mutually exclusive), Slot 2 = background
+  previewSlots: [string | null, string | null, string | null];
+  previewBackgroundActive: boolean;
+  previewForegroundSlot: 0 | 1 | null;
+  previewSplitPosition: number; // 0-1, how much foreground is shown
+  previewSplitVertical: boolean; // true = vertical split, false = horizontal
+  previewSplitReversed: boolean; // true = swap foreground/background sides
   contextMenu: {
     x: number;
     y: number;
@@ -53,7 +60,17 @@ interface UiActions {
   toggleCategory: (category: string) => void;
   expandAllCategories: () => void;
   collapseAllCategories: () => void;
-  setPreviewNode: (nodeId: string | null) => void;
+  // Preview slot actions
+  setPreviewSlot: (slot: 0 | 1 | 2, nodeId: string | null) => void;
+  togglePreviewBackground: () => void;
+  setPreviewForeground: (slot: 0 | 1 | null) => void;
+  clearPreviewSlot: (slot: 0 | 1 | 2) => void;
+  clearAllPreviewSlots: () => void;
+  restorePreviewSlots: (slots: [string | null, string | null, string | null], backgroundActive: boolean, foregroundSlot: 0 | 1 | null) => void;
+  getPreviewSlotForNode: (nodeId: string) => number | null;
+  setPreviewSplitPosition: (position: number) => void;
+  togglePreviewSplitDirection: () => void;
+  togglePreviewSplitReverse: () => void;
   showContextMenu: (x: number, y: number, type: 'canvas' | 'node' | 'edge' | 'port', targetId?: string) => void;
   hideContextMenu: () => void;
   showToast: (type: 'info' | 'success' | 'warning' | 'error', message: string, duration?: number) => void;
@@ -64,7 +81,7 @@ export const useUiStore = create<UiState & UiActions>((set, get) => ({
   isMobile: false,
   viewMode: 'split',
   theme: 'dark',
-  liveEdit: false,
+  liveEdit: true,
   leftPanelOpen: true,
   rightPanelOpen: true,
   bottomPanelOpen: false,
@@ -76,7 +93,12 @@ export const useUiStore = create<UiState & UiActions>((set, get) => ({
   modalData: null,
   paletteSearchQuery: '',
   expandedCategories: new Set(['Input', 'Output', 'Adjust']),
-  previewNodeId: null,
+  previewSlots: [null, null, null],
+  previewBackgroundActive: true,
+  previewForegroundSlot: null,
+  previewSplitPosition: 0.5,
+  previewSplitVertical: true,
+  previewSplitReversed: false,
   contextMenu: null,
   toasts: [],
 
@@ -175,8 +197,74 @@ export const useUiStore = create<UiState & UiActions>((set, get) => ({
     set({ expandedCategories: new Set() });
   },
 
-  setPreviewNode: (nodeId) => {
-    set({ previewNodeId: nodeId });
+  setPreviewSlot: (slot, nodeId) => {
+    set(produce((state: UiState) => {
+      state.previewSlots[slot] = nodeId;
+      // Auto-activate the slot
+      // Slot 2 (display "3") = background, Slots 0-1 (display "1"/"2") = foreground
+      if (slot === 2) {
+        state.previewBackgroundActive = true;
+      } else {
+        state.previewForegroundSlot = slot as 0 | 1;
+      }
+    }));
+  },
+
+  togglePreviewBackground: () => {
+    set((state) => ({ previewBackgroundActive: !state.previewBackgroundActive }));
+  },
+
+  setPreviewForeground: (slot: 0 | 1 | null) => {
+    set((state) => ({
+      // Toggle off if clicking the same slot, otherwise switch to new slot
+      previewForegroundSlot: state.previewForegroundSlot === slot ? null : slot
+    }));
+  },
+
+  clearPreviewSlot: (slot) => {
+    set(produce((state: UiState) => {
+      state.previewSlots[slot] = null;
+      // Slot 2 = background, Slots 0-1 = foreground
+      if (slot === 2) {
+        state.previewBackgroundActive = false;
+      } else if (state.previewForegroundSlot === slot) {
+        state.previewForegroundSlot = null;
+      }
+    }));
+  },
+
+  clearAllPreviewSlots: () => {
+    set({
+      previewSlots: [null, null, null],
+      previewBackgroundActive: false,
+      previewForegroundSlot: null,
+    });
+  },
+
+  restorePreviewSlots: (slots, backgroundActive, foregroundSlot) => {
+    set({
+      previewSlots: slots,
+      previewBackgroundActive: backgroundActive,
+      previewForegroundSlot: foregroundSlot,
+    });
+  },
+
+  getPreviewSlotForNode: (nodeId) => {
+    const { previewSlots } = get();
+    const index = previewSlots.indexOf(nodeId);
+    return index >= 0 ? index : null;
+  },
+
+  setPreviewSplitPosition: (position) => {
+    set({ previewSplitPosition: Math.max(0, Math.min(1, position)) });
+  },
+
+  togglePreviewSplitDirection: () => {
+    set((state) => ({ previewSplitVertical: !state.previewSplitVertical }));
+  },
+
+  togglePreviewSplitReverse: () => {
+    set((state) => ({ previewSplitReversed: !state.previewSplitReversed }));
   },
 
   showContextMenu: (x, y, type, targetId) => {

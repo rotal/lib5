@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { produce } from 'immer';
 import {
   Graph,
@@ -10,6 +11,46 @@ import {
 } from '../types';
 import { NodeRegistry } from '../core/graph/NodeRegistry';
 import { wouldCreateCycle } from '../core/graph/TopologicalSort';
+
+const STORAGE_KEY = 'lib5-graph';
+
+// Debounced storage to prevent excessive localStorage writes during slider drags
+function createDebouncedStorage() {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  let pendingValue: string | null = null;
+
+  return {
+    getItem: (name: string) => {
+      const str = localStorage.getItem(name);
+      if (!str) return null;
+      return JSON.parse(str);
+    },
+    setItem: (name: string, value: unknown) => {
+      pendingValue = JSON.stringify(value);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      // Debounce localStorage writes by 500ms
+      timeoutId = setTimeout(() => {
+        if (pendingValue !== null) {
+          localStorage.setItem(name, pendingValue);
+          pendingValue = null;
+        }
+        timeoutId = null;
+      }, 500);
+    },
+    removeItem: (name: string) => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      pendingValue = null;
+      localStorage.removeItem(name);
+    },
+  };
+}
+
+const debouncedStorage = createDebouncedStorage();
 
 interface GraphState {
   graph: Graph;
@@ -62,12 +103,14 @@ interface GraphActions {
   getEdge: (edgeId: string) => Edge | undefined;
 }
 
-export const useGraphStore = create<GraphState & GraphActions>((set, get) => ({
-  graph: createEmptyGraph(),
-  selectedNodeIds: new Set(),
-  selectedEdgeIds: new Set(),
-  connectionDrag: null,
-  clipboard: null,
+export const useGraphStore = create<GraphState & GraphActions>()(
+  persist(
+    (set, get) => ({
+      graph: createEmptyGraph(),
+      selectedNodeIds: new Set(),
+      selectedEdgeIds: new Set(),
+      connectionDrag: null,
+      clipboard: null,
 
   newGraph: (name = 'Untitled') => {
     set({
@@ -438,6 +481,17 @@ export const useGraphStore = create<GraphState & GraphActions>((set, get) => ({
     }));
   },
 
-  getNode: (nodeId) => get().graph.nodes[nodeId],
-  getEdge: (edgeId) => get().graph.edges[edgeId],
-}));
+      getNode: (nodeId) => get().graph.nodes[nodeId],
+      getEdge: (edgeId) => get().graph.edges[edgeId],
+    }),
+    {
+      name: STORAGE_KEY,
+      version: 1,
+      partialize: (state) => ({
+        // Only persist the graph, not selections or other transient state
+        graph: state.graph,
+      }),
+      storage: debouncedStorage,
+    }
+  )
+);

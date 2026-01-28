@@ -31,25 +31,19 @@ export const ColorInputNode = defineNode({
       default: { r: 128, g: 128, b: 128, a: 1 },
     },
     {
-      id: 'width',
-      name: 'Width',
-      type: 'number',
-      default: 512,
-      constraints: { min: 1, max: 8192, step: 1 },
-    },
-    {
-      id: 'height',
-      name: 'Height',
-      type: 'number',
-      default: 512,
-      constraints: { min: 1, max: 8192, step: 1 },
+      id: 'size',
+      name: 'Size',
+      type: 'size',
+      default: { width: 512, height: 512, locked: false },
+      sizeConstraints: { minWidth: 1, maxWidth: 8192, minHeight: 1, maxHeight: 8192, step: 1 },
     },
   ],
 
   async execute(inputs, params, context) {
     const color = params.color as Color;
-    const width = params.width as number;
-    const height = params.height as number;
+    const size = params.size as { width: number; height: number };
+    const width = size.width;
+    const height = size.height;
 
     const imageData = new ImageData(width, height);
     const data = imageData.data;

@@ -16,7 +16,16 @@ export interface PortDefinition {
 /**
  * Parameter types for node configuration
  */
-export type ParameterType = 'number' | 'color' | 'boolean' | 'select' | 'string' | 'file';
+export type ParameterType = 'number' | 'color' | 'boolean' | 'select' | 'string' | 'file' | 'size';
+
+/**
+ * Size value with width, height, and optional aspect lock
+ */
+export interface SizeValue {
+  width: number;
+  height: number;
+  locked?: boolean;
+}
 
 /**
  * Constraints for numeric parameters
@@ -24,6 +33,17 @@ export type ParameterType = 'number' | 'color' | 'boolean' | 'select' | 'string'
 export interface NumberConstraints {
   min?: number;
   max?: number;
+  step?: number;
+}
+
+/**
+ * Constraints for size parameters
+ */
+export interface SizeConstraints {
+  minWidth?: number;
+  maxWidth?: number;
+  minHeight?: number;
+  maxHeight?: number;
   step?: number;
 }
 
@@ -45,6 +65,7 @@ export interface ParameterDefinition {
   default: unknown;
   description?: string;
   constraints?: NumberConstraints;
+  sizeConstraints?: SizeConstraints;
   options?: SelectOption[];
   accept?: string; // For file type, e.g., 'image/*'
 }
@@ -188,6 +209,15 @@ export function validateParameter(
       );
     case 'file':
       return typeof value === 'string' || value instanceof File || value === null;
+    case 'size':
+      return (
+        typeof value === 'object' &&
+        value !== null &&
+        'width' in value &&
+        'height' in value &&
+        typeof (value as SizeValue).width === 'number' &&
+        typeof (value as SizeValue).height === 'number'
+      );
     default:
       return true;
   }

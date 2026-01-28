@@ -235,26 +235,12 @@ export const ScaleNode = defineNode({
       description: 'Scale percentage (for percentage mode)',
     },
     {
-      id: 'width',
-      name: 'Width',
-      type: 'number',
-      default: 512,
-      constraints: { min: 1, max: 8192, step: 1 },
-      description: 'Target width in pixels',
-    },
-    {
-      id: 'height',
-      name: 'Height',
-      type: 'number',
-      default: 512,
-      constraints: { min: 1, max: 8192, step: 1 },
-      description: 'Target height in pixels',
-    },
-    {
-      id: 'maintainAspect',
-      name: 'Maintain Aspect Ratio',
-      type: 'boolean',
-      default: true,
+      id: 'targetSize',
+      name: 'Target Size',
+      type: 'size',
+      default: { width: 512, height: 512, locked: true },
+      sizeConstraints: { minWidth: 1, maxWidth: 8192, minHeight: 1, maxHeight: 8192, step: 1 },
+      description: 'Target dimensions (lock to maintain aspect ratio)',
     },
     {
       id: 'interpolation',
@@ -285,9 +271,10 @@ export const ScaleNode = defineNode({
 
     const mode = params.mode as string;
     const scalePercent = params.scalePercent as number;
-    const targetWidth = params.width as number;
-    const targetHeight = params.height as number;
-    const maintainAspect = params.maintainAspect as boolean;
+    const targetSize = params.targetSize as { width: number; height: number; locked?: boolean };
+    const targetWidth = targetSize.width;
+    const targetHeight = targetSize.height;
+    const maintainAspect = targetSize.locked ?? true;
     const interpolation = params.interpolation as string;
 
     const srcW = isGPUTexture(input) ? input.width : input.width;

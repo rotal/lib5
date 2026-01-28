@@ -17,12 +17,6 @@ export function PropertiesPanel() {
   const node = selectedNodes[0];
   const definition = node ? NodeRegistry.get(node.type) : null;
 
-  // Debug logging
-  console.log('PropertiesPanel - selectedNodeIds:', Array.from(selectedNodeIds));
-  console.log('PropertiesPanel - node:', node);
-  console.log('PropertiesPanel - definition:', definition);
-  console.log('PropertiesPanel - parameters:', definition?.parameters);
-
   const handleParameterChange = useCallback(
     (paramId: string, value: unknown) => {
       if (node) {

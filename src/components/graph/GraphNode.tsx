@@ -1,16 +1,19 @@
-import React, { useCallback, useRef, useMemo, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useMemo, useState, useEffect } from 'react';
 import { NodeInstance, NodeRuntimeState } from '../../types';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
 import { GraphPort } from './GraphPort';
 import { Edge } from '../../types/graph';
-import { PortValue, isImageData, isImageBitmap, isFloatImage, floatToImageData } from '../../types/data';
-import { useUiStore } from '../../store';
+import { useUiStore, useExecutionStore } from '../../store';
+import { isFloatImage, floatToImageData, isGPUTexture } from '../../types/data';
+import type { GPUTexture } from '../../types/gpu';
+
+const PREVIEW_SLOT_COLORS = ['#ef4444', '#22c55e', '#3b82f6']; // Red, Green, Blue for slots 1, 2, 3
 
 interface GraphNodeProps {
   node: NodeInstance;
   isSelected: boolean;
   runtimeState?: NodeRuntimeState;
-  nodeOutputs?: Record<string, PortValue>;
+  nodeOutputs?: Record<string, unknown>;
   edges: Edge[];
   zoom: number;
   onSelect: (nodeId: string, additive: boolean) => void;
@@ -24,8 +27,6 @@ interface GraphNodeProps {
     y: number
   ) => void;
   onConnectionEnd: (nodeId: string, portId: string) => void;
-  onParameterChange?: (nodeId: string, paramId: string, value: unknown) => void;
-  onParameterCommit?: (nodeId: string, paramId: string) => void;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -52,132 +53,30 @@ export function GraphNode({
   onMoveEnd,
   onConnectionStart,
   onConnectionEnd,
-  onParameterChange,
-  onParameterCommit,
 }: GraphNodeProps) {
   const definition = NodeRegistry.get(node.type);
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, nodeX: 0, nodeY: 0 });
-  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [hasPreview, setHasPreview] = useState(false);
-  const { setPreviewNode } = useUiStore();
+  const { previewSlots, previewBackgroundActive, previewForegroundSlot } = useUiStore();
+  const { downloadGPUTexture } = useExecutionStore();
+  const [localPreview, setLocalPreview] = useState(false);
+  const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
 
   const categoryColor = CATEGORY_COLORS[definition?.category || 'Utility'];
 
-  // Handle double-click to preview node output
-  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    setPreviewNode(node.id);
-  }, [node.id, setPreviewNode]);
+  // Check if this node is assigned to a preview slot
+  const previewSlotIndex = useMemo(() => {
+    const index = previewSlots.indexOf(node.id);
+    return index >= 0 ? index : null;
+  }, [previewSlots, node.id]);
 
-  // Check if this node has image/mask outputs (can show preview)
-  const hasImageOutput = useMemo(() => {
-    return definition?.outputs?.some(o => o.dataType === 'image' || o.dataType === 'mask') ?? false;
-  }, [definition]);
-
-  const previewEnabled = (node.parameters.preview as boolean) ?? false;
-
-  // Handle preview toggle click
-  const handlePreviewToggle = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onParameterChange && onParameterCommit) {
-      onParameterChange(node.id, 'preview', !previewEnabled);
-      onParameterCommit(node.id, 'preview');
-    }
-  }, [node.id, previewEnabled, onParameterChange, onParameterCommit]);
-
-  // Find the first image output for preview (convert FloatImage to ImageData if needed)
-  const previewImage = useMemo((): ImageData | ImageBitmap | null => {
-    if (!nodeOutputs) return null;
-    for (const value of Object.values(nodeOutputs)) {
-      if (isImageData(value) || isImageBitmap(value)) {
-        return value;
-      }
-      if (isFloatImage(value)) {
-        // Convert FloatImage to ImageData for canvas display
-        return floatToImageData(value);
-      }
-    }
-    return null;
-  }, [nodeOutputs]);
-
-  // Render preview to canvas
-  useEffect(() => {
-    const canvas = previewCanvasRef.current;
-    if (!canvas || !previewImage) {
-      setHasPreview(false);
-      return;
-    }
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) {
-      setHasPreview(false);
-      return;
-    }
-
-    // Use higher resolution for better quality (2x for retina)
-    const displaySize = 120;
-    const dpr = window.devicePixelRatio || 1;
-    const canvasSize = displaySize * dpr;
-
-    canvas.width = canvasSize;
-    canvas.height = canvasSize;
-    canvas.style.width = `${displaySize}px`;
-    canvas.style.height = `${displaySize}px`;
-
-    // Enable high-quality image smoothing
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-
-    // Get image dimensions
-    let imgWidth: number;
-    let imgHeight: number;
-    if (isImageData(previewImage)) {
-      imgWidth = previewImage.width;
-      imgHeight = previewImage.height;
-    } else {
-      imgWidth = previewImage.width;
-      imgHeight = previewImage.height;
-    }
-
-    // Calculate scaled dimensions to fit in thumbnail while preserving aspect ratio
-    const scale = Math.min(canvasSize / imgWidth, canvasSize / imgHeight);
-    const scaledWidth = imgWidth * scale;
-    const scaledHeight = imgHeight * scale;
-    const offsetX = (canvasSize - scaledWidth) / 2;
-    const offsetY = (canvasSize - scaledHeight) / 2;
-
-    // Clear canvas with checkerboard pattern for transparency
-    ctx.fillStyle = '#1a1a2e';
-    ctx.fillRect(0, 0, canvasSize, canvasSize);
-
-    // Draw checkerboard (scale check size for DPR)
-    const checkSize = 8 * dpr;
-    ctx.fillStyle = '#252542';
-    for (let y = 0; y < canvasSize; y += checkSize * 2) {
-      for (let x = 0; x < canvasSize; x += checkSize * 2) {
-        ctx.fillRect(x, y, checkSize, checkSize);
-        ctx.fillRect(x + checkSize, y + checkSize, checkSize, checkSize);
-      }
-    }
-
-    // Draw the image
-    if (isImageData(previewImage)) {
-      // Create a temporary canvas to draw ImageData, then scale
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = imgWidth;
-      tempCanvas.height = imgHeight;
-      const tempCtx = tempCanvas.getContext('2d');
-      if (tempCtx) {
-        tempCtx.putImageData(previewImage, 0, 0);
-        ctx.drawImage(tempCanvas, offsetX, offsetY, scaledWidth, scaledHeight);
-      }
-    } else if (isImageBitmap(previewImage)) {
-      ctx.drawImage(previewImage, offsetX, offsetY, scaledWidth, scaledHeight);
-    }
-
-    setHasPreview(true);
-  }, [previewImage]);
+  // Check if the slot this node is in is currently active
+  // Slot 2 (display "3") = background, Slots 0-1 (display "1"/"2") = foreground
+  const isSlotActive = useMemo(() => {
+    if (previewSlotIndex === null) return false;
+    if (previewSlotIndex === 2) return previewBackgroundActive;
+    return previewForegroundSlot === previewSlotIndex;
+  }, [previewSlotIndex, previewBackgroundActive, previewForegroundSlot]);
 
   // Check which ports are connected
   const connectedInputs = useMemo(() => {
@@ -199,6 +98,56 @@ export function GraphNode({
     }
     return connected;
   }, [edges, node.id]);
+
+  // Get preview image data from node outputs
+  const previewImageData = useMemo((): ImageData | null => {
+    if (!localPreview || !nodeOutputs) return null;
+
+    for (const value of Object.values(nodeOutputs)) {
+      if (value instanceof ImageData) {
+        return value;
+      }
+      if (isFloatImage(value)) {
+        return floatToImageData(value);
+      }
+      // Download GPU textures for preview
+      if (isGPUTexture(value)) {
+        const floatImage = downloadGPUTexture(value as GPUTexture);
+        if (floatImage) {
+          return floatToImageData(floatImage);
+        }
+      }
+    }
+    return null;
+  }, [localPreview, nodeOutputs, downloadGPUTexture]);
+
+  // Generate preview data URL
+  useEffect(() => {
+    if (!localPreview) {
+      setPreviewDataUrl(null);
+      return;
+    }
+
+    if (!previewImageData) {
+      setPreviewDataUrl(null);
+      return;
+    }
+
+    // Create off-screen canvas and generate data URL
+    const canvas = document.createElement('canvas');
+    canvas.width = previewImageData.width;
+    canvas.height = previewImageData.height;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.putImageData(previewImageData, 0, 0);
+      setPreviewDataUrl(canvas.toDataURL('image/png'));
+    }
+  }, [localPreview, previewImageData]);
+
+  const handleTogglePreview = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setLocalPreview((prev) => !prev);
+  }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     // Ignore if clicking on a port
@@ -253,7 +202,6 @@ export function GraphNode({
           position: 'absolute',
         }}
         onMouseDown={handleMouseDown}
-        onDoubleClick={handleDoubleClick}
       >
         <div className="px-3 py-2 rounded-t-lg border-b border-editor-border bg-editor-error/20">
           <span className="text-sm font-medium text-editor-error">Unknown Node</span>
@@ -282,9 +230,22 @@ export function GraphNode({
         top: node.position.y,
         position: 'absolute',
       }}
-      onDoubleClick={handleDoubleClick}
       onMouseDown={handleMouseDown}
     >
+      {/* Preview slot indicator - top left */}
+      {previewSlotIndex !== null && (
+        <div
+          className="absolute -top-2 -left-2 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md z-10"
+          style={{
+            backgroundColor: PREVIEW_SLOT_COLORS[previewSlotIndex],
+            border: isSlotActive ? '2px solid white' : 'none',
+          }}
+          title={`Preview slot ${previewSlotIndex + 1}${isSlotActive ? ' (active)' : ''}`}
+        >
+          {previewSlotIndex + 1}
+        </div>
+      )}
+
       {/* Input ports - LEFT side */}
       {hasInputs && (
         <div
@@ -345,44 +306,43 @@ export function GraphNode({
         <span className="text-sm font-medium text-editor-text truncate flex-1">
           {definition.name}
         </span>
-        {/* Preview toggle - eye icon (for nodes with image/mask outputs) */}
-        {hasImageOutput && (
-          <button
-            className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors ${
-              previewEnabled
-                ? 'bg-editor-accent/30 text-editor-accent'
-                : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
-            }`}
-            onClick={handlePreviewToggle}
-            title={previewEnabled ? 'Hide preview (keep on GPU)' : 'Show preview (download from GPU)'}
-          >
-            <svg
-              className="w-3 h-3"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              {previewEnabled ? (
-                <>
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </>
-              ) : (
-                <>
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                  <line x1="1" y1="1" x2="23" y2="23" />
-                </>
-              )}
-            </svg>
-          </button>
-        )}
         {runtimeState?.executionState === 'running' && (
           <div className="w-3 h-3 border-2 border-editor-warning border-t-transparent rounded-full animate-spin" />
         )}
+        {/* Eye toggle for local preview */}
+        <button
+          onClick={handleTogglePreview}
+          className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${
+            localPreview
+              ? 'text-editor-accent bg-editor-accent/20'
+              : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light'
+          }`}
+          title={localPreview ? 'Hide preview' : 'Show preview'}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            {localPreview ? (
+              <>
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                <circle cx="12" cy="12" r="3" />
+              </>
+            ) : (
+              <>
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </>
+            )}
+          </svg>
+        </button>
       </div>
 
       {/* Port labels */}
@@ -410,13 +370,30 @@ export function GraphNode({
         </div>
       </div>
 
-      {/* Preview thumbnail - only show when preview is enabled */}
-      {previewEnabled && (previewImage || hasPreview) && (
-        <div className="px-2 pb-2 flex justify-center">
-          <canvas
-            ref={previewCanvasRef}
-            className="rounded border border-editor-border"
-          />
+      {/* Local preview thumbnail */}
+      {localPreview && (
+        <div className="px-2 pb-2 flex justify-center bg-editor-surface-light/30">
+          {previewDataUrl ? (
+            <img
+              src={previewDataUrl}
+              alt="Preview"
+              className="rounded border border-editor-border"
+              style={{
+                maxWidth: 180,
+                maxHeight: 180,
+                width: 'auto',
+                height: 'auto',
+                objectFit: 'contain',
+              }}
+            />
+          ) : (
+            <div
+              className="rounded border border-editor-border flex items-center justify-center text-editor-text-dim text-xs"
+              style={{ width: 180, height: 120, backgroundColor: '#1a1a2e' }}
+            >
+              No preview
+            </div>
+          )}
         </div>
       )}
 

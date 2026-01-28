@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { useGraph } from '../../hooks/useGraph';
 import { useGraphStore, useUiStore, useExecutionStore } from '../../store';
 import { Button } from '../ui';
@@ -17,10 +17,24 @@ export function TopToolbar() {
   } = useGraph();
 
   const { newGraph, loadGraph, setGraphName } = useGraphStore();
-  const { setViewMode, viewMode, showToast, liveEdit, toggleLiveEdit } = useUiStore();
+  const {
+    setViewMode,
+    viewMode,
+    showToast,
+    liveEdit,
+    toggleLiveEdit,
+    clearAllPreviewSlots,
+    restorePreviewSlots,
+    previewSlots,
+    previewBackgroundActive,
+    previewForegroundSlot,
+  } = useUiStore();
   const executionStore = useExecutionStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const fileMenuRef = useRef<HTMLDivElement>(null);
+  const currentFileHandle = useRef<any>(null);
 
   // New project
   const handleNew = useCallback(() => {
@@ -29,13 +43,49 @@ export function TopToolbar() {
         return;
       }
     }
+    currentFileHandle.current = null;
+    clearAllPreviewSlots();
     newGraph('Untitled');
-  }, [graph.nodes, newGraph]);
+  }, [graph.nodes, newGraph, clearAllPreviewSlots]);
 
   // Open project
-  const handleOpen = useCallback(() => {
-    fileInputRef.current?.click();
-  }, []);
+  const handleOpen = useCallback(async () => {
+    // Use File System Access API if available
+    if ('showOpenFilePicker' in window) {
+      try {
+        const [handle] = await (window as any).showOpenFilePicker({
+          types: [{
+            description: 'JSON Files',
+            accept: { 'application/json': ['.json'] },
+          }],
+        });
+        const file = await handle.getFile();
+        const text = await file.text();
+        const json = JSON.parse(text);
+        const loadedGraph = deserializeGraph(json);
+
+        // Restore preview state if available, otherwise clear
+        if (json.preview) {
+          restorePreviewSlots(json.preview.slots, json.preview.backgroundActive, json.preview.foregroundSlot);
+        } else {
+          clearAllPreviewSlots();
+        }
+
+        loadGraph(loadedGraph);
+
+        // Remember file handle for future Save operations
+        currentFileHandle.current = handle;
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error('Open failed:', err);
+          showToast('error', 'Failed to open file', 3000);
+        }
+      }
+    } else {
+      // Fallback to file input
+      fileInputRef.current?.click();
+    }
+  }, [loadGraph, showToast, clearAllPreviewSlots, restorePreviewSlots]);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -46,7 +96,17 @@ export function TopToolbar() {
       try {
         const json = JSON.parse(event.target?.result as string);
         const loadedGraph = deserializeGraph(json);
+
+        // Restore preview state if available, otherwise clear
+        if (json.preview) {
+          restorePreviewSlots(json.preview.slots, json.preview.backgroundActive, json.preview.foregroundSlot);
+        } else {
+          clearAllPreviewSlots();
+        }
+
         loadGraph(loadedGraph);
+        // Clear file handle since we used fallback input
+        currentFileHandle.current = null;
       } catch (error) {
         alert('Failed to load project file');
         console.error('Load error:', error);
@@ -56,23 +116,92 @@ export function TopToolbar() {
 
     // Reset input
     e.target.value = '';
-  }, [loadGraph]);
+  }, [loadGraph, clearAllPreviewSlots, restorePreviewSlots]);
 
-  // Save project
-  const handleSave = useCallback(() => {
+  // Save As - show file picker to choose location
+  const handleSaveAs = useCallback(async () => {
     const serialized = serializeGraph(graph);
+    // Add preview state
+    serialized.preview = {
+      slots: previewSlots,
+      backgroundActive: previewBackgroundActive,
+      foregroundSlot: previewForegroundSlot,
+    };
     const json = JSON.stringify(serialized, null, 2);
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
 
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${graph.name || 'project'}.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [graph]);
+    // Use File System Access API if available
+    if ('showSaveFilePicker' in window) {
+      try {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: `${graph.name || 'project'}.json`,
+          types: [{
+            description: 'JSON Files',
+            accept: { 'application/json': ['.json'] },
+          }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(json);
+        await writable.close();
+
+        // Remember file handle for future Save operations
+        currentFileHandle.current = handle;
+
+        // Update graph name from saved filename
+        const newName = handle.name.replace(/\.json$/, '');
+        setGraphName(newName);
+        showToast('success', `Saved as ${handle.name}`, 2000);
+      } catch (err: any) {
+        // User cancelled the picker
+        if (err.name !== 'AbortError') {
+          console.error('Save failed:', err);
+          showToast('error', 'Failed to save file', 3000);
+        }
+      }
+    } else {
+      // Fallback for browsers without File System Access API
+      const newName = prompt('Save as:', graph.name || 'project');
+      if (!newName) return;
+
+      setGraphName(newName);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${newName}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+  }, [graph, setGraphName, showToast, previewSlots, previewBackgroundActive, previewForegroundSlot]);
+
+  // Save project - use existing file handle if available, otherwise run Save As
+  const handleSave = useCallback(async () => {
+    // If no file handle, run Save As instead
+    if (!currentFileHandle.current) {
+      handleSaveAs();
+      return;
+    }
+
+    const serialized = serializeGraph(graph);
+    // Add preview state
+    serialized.preview = {
+      slots: previewSlots,
+      backgroundActive: previewBackgroundActive,
+      foregroundSlot: previewForegroundSlot,
+    };
+    const json = JSON.stringify(serialized, null, 2);
+
+    try {
+      const writable = await currentFileHandle.current.createWritable();
+      await writable.write(json);
+      await writable.close();
+      showToast('success', 'Saved', 1500);
+    } catch (err: any) {
+      console.error('Save failed:', err);
+      showToast('error', 'Failed to save file', 3000);
+    }
+  }, [graph, showToast, handleSaveAs, previewSlots, previewBackgroundActive, previewForegroundSlot]);
 
   // Toggle live mode and execute if turning on
   const handleToggleLiveEdit = useCallback(() => {
@@ -116,17 +245,53 @@ export function TopToolbar() {
 
   return (
     <div className="h-12 bg-editor-surface border-b border-editor-border flex items-center px-3 gap-2">
-      {/* File operations */}
-      <div className="flex items-center gap-1">
-        <Button variant="ghost" size="sm" onClick={handleNew}>
-          New
+      {/* File menu */}
+      <div className="relative" ref={fileMenuRef}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setFileMenuOpen(!fileMenuOpen)}
+          onBlur={(e) => {
+            // Close menu if focus leaves the menu entirely
+            if (!fileMenuRef.current?.contains(e.relatedTarget as Node)) {
+              setFileMenuOpen(false);
+            }
+          }}
+        >
+          File
+          <svg className="w-3 h-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
         </Button>
-        <Button variant="ghost" size="sm" onClick={handleOpen}>
-          Open
-        </Button>
-        <Button variant="ghost" size="sm" onClick={handleSave}>
-          Save
-        </Button>
+        {fileMenuOpen && (
+          <div className="absolute top-full left-0 mt-1 bg-editor-surface border border-editor-border rounded shadow-lg py-1 min-w-[120px] z-50">
+            <button
+              className="w-full px-3 py-1.5 text-sm text-left text-editor-text hover:bg-editor-surface-light"
+              onClick={() => { handleNew(); setFileMenuOpen(false); }}
+            >
+              New
+            </button>
+            <button
+              className="w-full px-3 py-1.5 text-sm text-left text-editor-text hover:bg-editor-surface-light"
+              onClick={() => { handleOpen(); setFileMenuOpen(false); }}
+            >
+              Open
+            </button>
+            <div className="h-px bg-editor-border my-1" />
+            <button
+              className="w-full px-3 py-1.5 text-sm text-left text-editor-text hover:bg-editor-surface-light"
+              onClick={() => { handleSave(); setFileMenuOpen(false); }}
+            >
+              Save
+            </button>
+            <button
+              className="w-full px-3 py-1.5 text-sm text-left text-editor-text hover:bg-editor-surface-light"
+              onClick={() => { handleSaveAs(); setFileMenuOpen(false); }}
+            >
+              Save As...
+            </button>
+          </div>
+        )}
         <input
           ref={fileInputRef}
           type="file"

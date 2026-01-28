@@ -1,7 +1,7 @@
 import React, { useCallback, useRef } from 'react';
-import { ParameterDefinition } from '../../types/node';
+import { ParameterDefinition, SizeValue } from '../../types/node';
 import { Color } from '../../types/data';
-import { Slider, ColorPicker, Select, Toggle, NumberInput, Input } from '../ui';
+import { Slider, ColorPicker, Select, Toggle, NumberInput, Input, SizeInput } from '../ui';
 
 interface ParameterInputProps {
   definition: ParameterDefinition;
@@ -126,6 +126,23 @@ export function ParameterInput({
           value={colorValue}
           onChange={onChange as (v: Color) => void}
           onChangeEnd={onChangeEnd as (v: Color) => void}
+        />
+      );
+    }
+
+    case 'size': {
+      const sizeValue: SizeValue = (value as SizeValue) || (definition.default as SizeValue) || {
+        width: 512,
+        height: 512,
+        locked: false,
+      };
+      return (
+        <SizeInput
+          label={definition.name}
+          value={sizeValue}
+          onChange={onChange as (v: SizeValue) => void}
+          onChangeEnd={onChangeEnd as unknown as (v: SizeValue) => void}
+          constraints={definition.sizeConstraints}
         />
       );
     }
