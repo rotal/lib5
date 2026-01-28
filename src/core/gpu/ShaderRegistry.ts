@@ -598,6 +598,44 @@ void main() {
 
 // ============ SCALE SHADER ============
 
+const TRANSLATE_FRAG = `#version 300 es
+precision highp float;
+
+// Image translation shader with edge handling modes
+
+in vec2 v_texCoord;
+out vec4 fragColor;
+
+uniform sampler2D u_texture;
+uniform vec2 u_offset;          // Offset in pixels
+uniform vec2 u_size;            // Image dimensions
+uniform int u_edgeMode;         // 0=transparent, 1=wrap, 2=clamp
+uniform vec4 u_bgColor;         // Background color (for transparent mode)
+
+const int EDGE_TRANSPARENT = 0;
+const int EDGE_WRAP = 1;
+const int EDGE_CLAMP = 2;
+
+void main() {
+  // Calculate source coordinate
+  vec2 srcCoord = v_texCoord - u_offset / u_size;
+
+  if (u_edgeMode == EDGE_WRAP) {
+    srcCoord = fract(srcCoord);
+  } else if (u_edgeMode == EDGE_CLAMP) {
+    srcCoord = clamp(srcCoord, vec2(0.0), vec2(1.0));
+  } else {
+    // Transparent - check bounds
+    if (srcCoord.x < 0.0 || srcCoord.x > 1.0 || srcCoord.y < 0.0 || srcCoord.y > 1.0) {
+      fragColor = u_bgColor;
+      return;
+    }
+  }
+
+  fragColor = texture(u_texture, srcCoord);
+}
+`;
+
 const SCALE_FRAG = `#version 300 es
 precision highp float;
 
@@ -689,6 +727,7 @@ export class ShaderRegistry {
     convolution: CONVOLUTION_FRAG,
     blend: BLEND_FRAG,
     scale: SCALE_FRAG,
+    translate: TRANSLATE_FRAG,
     brightness_contrast: BRIGHTNESS_CONTRAST_FRAG,
     hue_saturation: HUE_SATURATION_FRAG,
     levels: LEVELS_FRAG,

@@ -10,7 +10,7 @@ import { ExportNode } from './output';
 import { BrightnessContrastNode, HueSaturationNode, LevelsNode, InvertNode } from './adjust';
 
 // Transform nodes
-import { RotateNode, FlipNode, ScaleNode, CropNode } from './transform';
+import { RotateNode, FlipNode, ScaleNode, CropNode, TranslateNode } from './transform';
 
 // Filter nodes
 import { BlurNode, SharpenNode, ConvolutionNode } from './filter';
@@ -50,6 +50,7 @@ export function registerAllNodes(): void {
   NodeRegistry.register(FlipNode);
   NodeRegistry.register(ScaleNode);
   NodeRegistry.register(CropNode);
+  NodeRegistry.register(TranslateNode);
 
   // Filter
   NodeRegistry.register(BlurNode);
@@ -95,6 +96,7 @@ export {
   FlipNode,
   ScaleNode,
   CropNode,
+  TranslateNode,
   // Filter
   BlurNode,
   SharpenNode,
