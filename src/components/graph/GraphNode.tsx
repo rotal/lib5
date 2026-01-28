@@ -3,7 +3,7 @@ import { NodeInstance, NodeRuntimeState } from '../../types';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
 import { GraphPort } from './GraphPort';
 import { Edge } from '../../types/graph';
-import { PortValue, isImageData, isImageBitmap } from '../../types/data';
+import { PortValue, isImageData, isImageBitmap, isFloatImage, floatToImageData } from '../../types/data';
 import { useUiStore } from '../../store';
 
 interface GraphNodeProps {
@@ -86,12 +86,16 @@ export function GraphNode({
     }
   }, [node.id, previewEnabled, onParameterChange, onParameterCommit]);
 
-  // Find the first image output for preview
-  const previewImage = useMemo(() => {
+  // Find the first image output for preview (convert FloatImage to ImageData if needed)
+  const previewImage = useMemo((): ImageData | ImageBitmap | null => {
     if (!nodeOutputs) return null;
     for (const value of Object.values(nodeOutputs)) {
       if (isImageData(value) || isImageBitmap(value)) {
         return value;
+      }
+      if (isFloatImage(value)) {
+        // Convert FloatImage to ImageData for canvas display
+        return floatToImageData(value);
       }
     }
     return null;

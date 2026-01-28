@@ -1,5 +1,5 @@
 import { defineNode, ensureFloatImage } from '../defineNode';
-import { isGPUTexture, FloatImage, createFloatImage } from '../../../types/data';
+import { isGPUTexture, isFloatImage, FloatImage, createFloatImage } from '../../../types/data';
 import type { GPUContext, GPUTexture } from '../../../types/gpu';
 import type { ExecutionContext } from '../../../types/node';
 
@@ -30,7 +30,7 @@ function generateGaussianKernel(radius: number, sigma: number): Float32Array {
  * GPU blur implementation using separable two-pass Gaussian blur
  */
 function executeGPU(
-  input: ImageData | GPUTexture,
+  input: ImageData | FloatImage | GPUTexture,
   radius: number,
   sigma: number,
   gpu: GPUContext
@@ -41,8 +41,11 @@ function executeGPU(
 
   if (isGPUTexture(input)) {
     inputTexture = input;
+  } else if (isFloatImage(input)) {
+    inputTexture = gpu.createTextureFromFloat(input);
+    needsInputRelease = true;
   } else {
-    inputTexture = gpu.createTexture(input);
+    inputTexture = gpu.createTexture(input as ImageData);
     needsInputRelease = true;
   }
 

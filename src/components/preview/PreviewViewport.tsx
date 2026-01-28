@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useExecutionStore, useUiStore } from '../../store';
+import { isFloatImage, floatToImageData } from '../../types/data';
 
 export function PreviewViewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -20,16 +21,20 @@ export function PreviewViewport() {
     return [];
   }, [previewNodeId, nodeOutputs]);
 
-  // Get image to display - find first ImageData in any output
-  const imageData = React.useMemo(() => {
+  // Get image to display - find first ImageData or FloatImage in any output
+  const imageData = React.useMemo((): ImageData | null => {
     for (const nodeId of previewNodes) {
       const outputs = nodeOutputs[nodeId];
       if (!outputs) continue;
 
-      // Check all outputs for ImageData
+      // Check all outputs for ImageData or FloatImage
       for (const value of Object.values(outputs)) {
         if (value instanceof ImageData) {
           return value;
+        }
+        if (isFloatImage(value)) {
+          // Convert FloatImage to ImageData for canvas display
+          return floatToImageData(value);
         }
       }
     }
