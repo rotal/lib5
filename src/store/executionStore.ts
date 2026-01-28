@@ -162,16 +162,16 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>((set,
     if (engine) {
       engine.markDirty(nodeIds);
     }
+    // Don't delete nodeOutputs here - let execution replace them naturally.
+    // This keeps preview working while heavy compute nodes are waiting for execution.
     set((state) => {
-      const newOutputs = { ...state.nodeOutputs };
       const newStates = { ...state.nodeStates };
       for (const nodeId of nodeIds) {
-        delete newOutputs[nodeId];
         if (newStates[nodeId]) {
-          newStates[nodeId] = { ...newStates[nodeId], executionState: 'idle' };
+          newStates[nodeId] = { ...newStates[nodeId], executionState: 'pending' };
         }
       }
-      return { nodeOutputs: newOutputs, nodeStates: newStates };
+      return { nodeStates: newStates };
     });
   },
 
