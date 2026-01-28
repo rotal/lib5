@@ -1,4 +1,4 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
 
 export const ApplyMaskNode = defineNode({
   type: 'mask/apply',
@@ -52,8 +52,8 @@ export const ApplyMaskNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = inputs.image as ImageData | null;
-    const maskImage = inputs.mask as ImageData | null;
+    const inputImage = ensureImageData(inputs.image, context);
+    const maskImage = ensureImageData(inputs.mask, context);
 
     if (!inputImage) {
       return { image: null };

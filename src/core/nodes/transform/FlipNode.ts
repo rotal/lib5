@@ -1,4 +1,6 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
+import { isGPUTexture } from '../../../types/data';
+import type { GPUTexture } from '../../../types/gpu';
 
 export const FlipNode = defineNode({
   type: 'transform/flip',
@@ -39,20 +41,96 @@ export const FlipNode = defineNode({
       default: false,
       description: 'Flip vertically',
     },
+    {
+      id: 'preview',
+      name: 'Preview',
+      type: 'boolean',
+      default: false,
+      description: 'Show preview (downloads from GPU)',
+    },
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = inputs.image as ImageData | null;
+    const input = inputs.image as ImageData | GPUTexture | null;
 
-    if (!inputImage) {
+    if (!input) {
       return { image: null };
     }
 
     const horizontal = params.horizontal as boolean;
     const vertical = params.vertical as boolean;
+    const preview = params.preview as boolean;
+
+    // GPU path
+    if (context.gpu?.isAvailable) {
+      const gpu = context.gpu;
+
+      let inputTexture: GPUTexture;
+      let needsInputRelease = false;
+
+      if (isGPUTexture(input)) {
+        inputTexture = input;
+      } else {
+        inputTexture = gpu.createTexture(input);
+        needsInputRelease = true;
+      }
+
+      // If no flip, just pass through
+      if (!horizontal && !vertical) {
+        if (needsInputRelease) {
+          // Return copy if we created the texture
+          const { width, height } = inputTexture;
+          const outputTexture = gpu.createEmptyTexture(width, height);
+          gpu.renderToTexture('flip', {
+            u_texture: inputTexture.texture,
+            u_horizontal: false,
+            u_vertical: false,
+          }, outputTexture);
+          gpu.releaseTexture(inputTexture.id);
+
+          if (preview) {
+            const result = gpu.downloadTexture(outputTexture);
+            gpu.releaseTexture(outputTexture.id);
+            return { image: result };
+          }
+          return { image: outputTexture };
+        }
+        // Pass through the existing texture
+        if (preview) {
+          return { image: gpu.downloadTexture(inputTexture) };
+        }
+        return { image: inputTexture };
+      }
+
+      const { width, height } = inputTexture;
+      const outputTexture = gpu.createEmptyTexture(width, height);
+
+      gpu.renderToTexture('flip', {
+        u_texture: inputTexture.texture,
+        u_horizontal: horizontal,
+        u_vertical: vertical,
+      }, outputTexture);
+
+      if (needsInputRelease) {
+        gpu.releaseTexture(inputTexture.id);
+      }
+
+      if (preview) {
+        const result = gpu.downloadTexture(outputTexture);
+        gpu.releaseTexture(outputTexture.id);
+        return { image: result };
+      }
+
+      return { image: outputTexture };
+    }
+
+    // CPU fallback
+    const inputImage = ensureImageData(input, context);
+    if (!inputImage) {
+      return { image: null };
+    }
 
     if (!horizontal && !vertical) {
-      // No flip - return copy
       return {
         image: new ImageData(
           new Uint8ClampedArray(inputImage.data),

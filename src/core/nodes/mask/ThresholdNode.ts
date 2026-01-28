@@ -1,4 +1,6 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
+import { isGPUTexture } from '../../../types/data';
+import type { GPUTexture } from '../../../types/gpu';
 
 export const ThresholdNode = defineNode({
   type: 'mask/threshold',
@@ -65,19 +67,81 @@ export const ThresholdNode = defineNode({
         { label: 'Alpha', value: 'alpha' },
       ],
     },
+    {
+      id: 'preview',
+      name: 'Preview',
+      type: 'boolean',
+      default: false,
+      description: 'Show preview (downloads from GPU)',
+    },
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = inputs.image as ImageData | null;
+    const input = inputs.image as ImageData | GPUTexture | null;
 
-    if (!inputImage) {
+    if (!input) {
       return { mask: null, image: null };
     }
 
-    const threshold = params.threshold as number;
-    const softness = params.softness as number;
+    const threshold = (params.threshold as number) / 255;
+    const softness = (params.softness as number) / 255;
     const invert = params.invert as boolean;
     const channel = params.channel as string;
+    const preview = params.preview as boolean;
+
+    // Map channel names to indices
+    const channelMap: Record<string, number> = {
+      luminance: 0,
+      red: 1,
+      green: 2,
+      blue: 3,
+      alpha: 4,
+    };
+
+    // GPU path
+    if (context.gpu?.isAvailable) {
+      const gpu = context.gpu;
+
+      let inputTexture: GPUTexture;
+      let needsInputRelease = false;
+
+      if (isGPUTexture(input)) {
+        inputTexture = input;
+      } else {
+        inputTexture = gpu.createTexture(input);
+        needsInputRelease = true;
+      }
+
+      const { width, height } = inputTexture;
+      const outputTexture = gpu.createEmptyTexture(width, height);
+
+      gpu.renderToTexture('threshold', {
+        u_texture: inputTexture.texture,
+        u_threshold: threshold,
+        u_softness: softness,
+        u_invert: invert,
+        u_channel: channelMap[channel],
+      }, outputTexture);
+
+      if (needsInputRelease) {
+        gpu.releaseTexture(inputTexture.id);
+      }
+
+      if (preview) {
+        const result = gpu.downloadTexture(outputTexture);
+        gpu.releaseTexture(outputTexture.id);
+        return { mask: result, image: result };
+      }
+
+      // Return same texture for both outputs (both are grayscale masks)
+      return { mask: outputTexture, image: outputTexture };
+    }
+
+    // CPU fallback
+    const inputImage = ensureImageData(input, context);
+    if (!inputImage) {
+      return { mask: null, image: null };
+    }
 
     const { width, height, data: srcData } = inputImage;
     const maskImage = new ImageData(width, height);
@@ -85,8 +149,8 @@ export const ThresholdNode = defineNode({
     const maskData = maskImage.data;
     const outData = outputImage.data;
 
-    const lowThreshold = Math.max(0, threshold - softness);
-    const highThreshold = Math.min(255, threshold + softness);
+    const lowThreshold = Math.max(0, (params.threshold as number) - (params.softness as number));
+    const highThreshold = Math.min(255, (params.threshold as number) + (params.softness as number));
     const range = highThreshold - lowThreshold || 1;
 
     for (let i = 0; i < srcData.length; i += 4) {
@@ -107,14 +171,13 @@ export const ThresholdNode = defineNode({
           break;
         case 'luminance':
         default:
-          // Standard luminance formula
           value = 0.299 * srcData[i] + 0.587 * srcData[i + 1] + 0.114 * srcData[i + 2];
           break;
       }
 
       let maskValue: number;
-      if (softness === 0) {
-        maskValue = value >= threshold ? 255 : 0;
+      if ((params.softness as number) === 0) {
+        maskValue = value >= (params.threshold as number) ? 255 : 0;
       } else {
         if (value <= lowThreshold) {
           maskValue = 0;
@@ -129,13 +192,11 @@ export const ThresholdNode = defineNode({
         maskValue = 255 - maskValue;
       }
 
-      // Mask output (grayscale)
       maskData[i] = maskValue;
       maskData[i + 1] = maskValue;
       maskData[i + 2] = maskValue;
       maskData[i + 3] = 255;
 
-      // Image output (B&W)
       outData[i] = maskValue;
       outData[i + 1] = maskValue;
       outData[i + 2] = maskValue;

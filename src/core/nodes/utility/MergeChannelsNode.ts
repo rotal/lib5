@@ -1,4 +1,4 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
 
 export const MergeChannelsNode = defineNode({
   type: 'utility/merge-channels',
@@ -74,10 +74,10 @@ export const MergeChannelsNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const redImage = inputs.red as ImageData | null;
-    const greenImage = inputs.green as ImageData | null;
-    const blueImage = inputs.blue as ImageData | null;
-    const alphaImage = inputs.alpha as ImageData | null;
+    const redImage = ensureImageData(inputs.red, context);
+    const greenImage = ensureImageData(inputs.green, context);
+    const blueImage = ensureImageData(inputs.blue, context);
+    const alphaImage = ensureImageData(inputs.alpha, context);
 
     const defaultRed = params.defaultRed as number;
     const defaultGreen = params.defaultGreen as number;

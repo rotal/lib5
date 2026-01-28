@@ -1,4 +1,4 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
 
 export const AICustomNode = defineNode({
   type: 'ai/custom',
@@ -122,8 +122,8 @@ export const AICustomNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = inputs.image as ImageData | null;
-    const inputMask = inputs.mask as ImageData | null;
+    const inputImage = ensureImageData(inputs.image, context);
+    const inputMask = ensureImageData(inputs.mask, context);
 
     const endpoint = params.endpoint as string;
     const method = params.method as string;

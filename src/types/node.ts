@@ -1,4 +1,5 @@
 import { DataType, PortValue } from './data';
+import { GPUContext } from './gpu';
 
 /**
  * Port definition for node inputs/outputs
@@ -72,6 +73,8 @@ export interface ExecutionContext {
   reportProgress: (progress: number) => void;
   getCache: (key: string) => PortValue | undefined;
   setCache: (key: string, value: PortValue) => void;
+  /** GPU context for accelerated image processing (optional) */
+  gpu?: GPUContext;
 }
 
 /**

@@ -1,9 +1,11 @@
 import { Graph, GraphExecutionState } from '../../types/graph';
 import { NodeRuntimeState, ExecutionContext } from '../../types/node';
-import { PortValue } from '../../types/data';
+import { PortValue, isGPUTexture } from '../../types/data';
+import { GPUContext } from '../../types/gpu';
 import { NodeRegistry } from './NodeRegistry';
 import { topologicalSort, getPartialExecutionOrder } from './TopologicalSort';
 import { validateGraph } from './GraphValidator';
+import { createGPUContext } from '../gpu';
 
 /**
  * Callback for execution events
@@ -27,10 +29,30 @@ export class GraphEngine {
   private outputCache: Map<string, Record<string, PortValue>> = new Map();
   private abortController: AbortController | null = null;
   private callbacks: ExecutionCallbacks = {};
+  private gpuContext: GPUContext | null = null;
 
   constructor(graph: Graph) {
     this.graph = graph;
     this.state = this.createInitialState();
+    this.initializeGPU();
+  }
+
+  /**
+   * Initialize GPU context for accelerated processing
+   */
+  private initializeGPU(): void {
+    try {
+      this.gpuContext = createGPUContext({
+        maxPoolSize: 10,
+        preferHighPerformance: true,
+      });
+      if (this.gpuContext?.isAvailable) {
+        console.log('GPU acceleration enabled (WebGL 2.0)');
+      }
+    } catch (error) {
+      console.warn('GPU acceleration unavailable:', error);
+      this.gpuContext = null;
+    }
   }
 
   private createInitialState(): GraphExecutionState {
@@ -74,6 +96,16 @@ export class GraphEngine {
    * Clear cached outputs
    */
   clearCache(): void {
+    // Release GPU textures before clearing cache
+    if (this.gpuContext) {
+      for (const outputs of this.outputCache.values()) {
+        for (const value of Object.values(outputs)) {
+          if (isGPUTexture(value)) {
+            this.gpuContext.releaseTexture(value.id);
+          }
+        }
+      }
+    }
     this.outputCache.clear();
   }
 
@@ -242,6 +274,7 @@ export class GraphEngine {
         setCache: (key: string, value: PortValue) => {
           this.outputCache.set(`${nodeId}:${key}`, { value });
         },
+        gpu: this.gpuContext ?? undefined,
       };
 
       // Execute node
@@ -286,6 +319,25 @@ export class GraphEngine {
    */
   isExecuting(): boolean {
     return this.state.isExecuting;
+  }
+
+  /**
+   * Get the GPU context (if available)
+   */
+  getGPUContext(): GPUContext | null {
+    return this.gpuContext;
+  }
+
+  /**
+   * Dispose the engine and release all resources
+   */
+  dispose(): void {
+    this.abort();
+    this.clearCache();
+    if (this.gpuContext) {
+      this.gpuContext.dispose();
+      this.gpuContext = null;
+    }
   }
 }
 

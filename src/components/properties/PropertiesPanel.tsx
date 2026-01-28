@@ -81,18 +81,20 @@ export function PropertiesPanel() {
 
       {/* Parameters */}
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
-        {definition.parameters.length === 0 ? (
+        {definition.parameters.filter(p => p.id !== 'preview').length === 0 ? (
           <p className="text-sm text-editor-text-dim">No parameters</p>
         ) : (
-          definition.parameters.map((param) => (
-            <ParameterInput
-              key={param.id}
-              definition={param}
-              value={node.parameters[param.id]}
-              onChange={(value) => handleParameterChange(param.id, value)}
-              onChangeEnd={() => handleParameterChangeEnd(param.id)}
-            />
-          ))
+          definition.parameters
+            .filter(p => p.id !== 'preview') // Preview is shown on node header
+            .map((param) => (
+              <ParameterInput
+                key={param.id}
+                definition={param}
+                value={node.parameters[param.id]}
+                onChange={(value) => handleParameterChange(param.id, value)}
+                onChangeEnd={() => handleParameterChangeEnd(param.id)}
+              />
+            ))
         )}
       </div>
 

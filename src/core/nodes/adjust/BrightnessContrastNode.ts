@@ -1,4 +1,6 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
+import { isGPUTexture } from '../../../types/data';
+import type { GPUTexture } from '../../../types/gpu';
 
 export const BrightnessContrastNode = defineNode({
   type: 'adjust/brightness-contrast',
@@ -39,19 +41,74 @@ export const BrightnessContrastNode = defineNode({
       default: 0,
       constraints: { min: -100, max: 100, step: 1 },
     },
+    {
+      id: 'preview',
+      name: 'Preview',
+      type: 'boolean',
+      default: false,
+      description: 'Show preview (downloads from GPU)',
+    },
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = inputs.image as ImageData | null;
+    const input = inputs.image as ImageData | GPUTexture | null;
 
-    if (!inputImage) {
+    if (!input) {
       return { image: null };
     }
 
     const brightness = (params.brightness as number) / 100;
     const contrast = (params.contrast as number) / 100;
+    const preview = params.preview as boolean;
 
-    // Create output image
+    // GPU path
+    if (context.gpu?.isAvailable) {
+      const gpu = context.gpu;
+
+      // Get or create input texture
+      let inputTexture: GPUTexture;
+      let needsInputRelease = false;
+
+      if (isGPUTexture(input)) {
+        inputTexture = input;
+      } else {
+        inputTexture = gpu.createTexture(input);
+        needsInputRelease = true;
+      }
+
+      const { width, height } = inputTexture;
+
+      // Create output texture
+      const outputTexture = gpu.createEmptyTexture(width, height);
+
+      // Render
+      gpu.renderToTexture('brightness_contrast', {
+        u_texture: inputTexture.texture,
+        u_brightness: brightness,
+        u_contrast: contrast,
+      }, outputTexture);
+
+      // Release input if we created it
+      if (needsInputRelease) {
+        gpu.releaseTexture(inputTexture.id);
+      }
+
+      // Return GPU texture or download based on preview setting
+      if (preview) {
+        const result = gpu.downloadTexture(outputTexture);
+        gpu.releaseTexture(outputTexture.id);
+        return { image: result };
+      }
+
+      return { image: outputTexture };
+    }
+
+    // CPU fallback
+    const inputImage = ensureImageData(input, context);
+    if (!inputImage) {
+      return { image: null };
+    }
+
     const outputImage = new ImageData(
       new Uint8ClampedArray(inputImage.data),
       inputImage.width,
@@ -59,25 +116,13 @@ export const BrightnessContrastNode = defineNode({
     );
     const data = outputImage.data;
 
-    // Calculate contrast factor
-    // contrast range: -1 to 1, we map to factor 0 to 2+
-    const contrastFactor = contrast >= 0
-      ? 1 + contrast * 2
-      : 1 + contrast;
+    const contrastFactor = contrast >= 0 ? 1 + contrast * 2 : 1 + contrast;
 
-    // Apply brightness and contrast
     for (let i = 0; i < data.length; i += 4) {
-      // Apply to RGB channels only, not alpha
       for (let c = 0; c < 3; c++) {
         let value = data[i + c];
-
-        // Apply brightness (-255 to +255)
         value += brightness * 255;
-
-        // Apply contrast (centered at 128)
         value = (value - 128) * contrastFactor + 128;
-
-        // Clamp is handled by Uint8ClampedArray
         data[i + c] = value;
       }
     }

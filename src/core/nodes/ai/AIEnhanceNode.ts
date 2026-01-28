@@ -1,4 +1,4 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
 
 export const AIEnhanceNode = defineNode({
   type: 'ai/enhance',
@@ -75,7 +75,7 @@ export const AIEnhanceNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = inputs.image as ImageData | null;
+    const inputImage = ensureImageData(inputs.image, context);
 
     if (!inputImage) {
       return { image: null };

@@ -1,4 +1,4 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
 
 export const MergeNode = defineNode({
   type: 'composite/merge',
@@ -66,10 +66,10 @@ export const MergeNode = defineNode({
 
   async execute(inputs, params, context) {
     const images = [
-      inputs.image1 as ImageData | null,
-      inputs.image2 as ImageData | null,
-      inputs.image3 as ImageData | null,
-      inputs.image4 as ImageData | null,
+      ensureImageData(inputs.image1, context),
+      ensureImageData(inputs.image2, context),
+      ensureImageData(inputs.image3, context),
+      ensureImageData(inputs.image4, context),
     ].filter(Boolean) as ImageData[];
 
     if (images.length === 0) {

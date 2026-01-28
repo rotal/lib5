@@ -1,4 +1,6 @@
 import { defineNode } from '../defineNode';
+import { isGPUTexture } from '../../../types/data';
+import type { GPUTexture } from '../../../types/gpu';
 
 export const PreviewNode = defineNode({
   type: 'output/preview',
@@ -43,14 +45,22 @@ export const PreviewNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const image = inputs.image as ImageData | null;
+    const input = inputs.image as ImageData | GPUTexture | null;
 
-    if (!image) {
+    if (!input) {
       return { image: null };
     }
 
-    // Just pass through the image
-    // The preview viewport will read this node's output
-    return { image };
+    // If GPU texture, download to ImageData for preview rendering
+    if (isGPUTexture(input)) {
+      if (!context.gpu) {
+        throw new Error('GPU context required to download texture');
+      }
+      const imageData = context.gpu.downloadTexture(input);
+      return { image: imageData };
+    }
+
+    // Pass through ImageData
+    return { image: input };
   },
 });

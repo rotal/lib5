@@ -1,4 +1,6 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
+import { isGPUTexture } from '../../../types/data';
+import type { GPUTexture } from '../../../types/gpu';
 
 export const ReorderChannelsNode = defineNode({
   type: 'utility/reorder-channels',
@@ -85,12 +87,19 @@ export const ReorderChannelsNode = defineNode({
       ],
       description: 'Source channel for alpha output',
     },
+    {
+      id: 'preview',
+      name: 'Preview',
+      type: 'boolean',
+      default: false,
+      description: 'Show preview (downloads from GPU)',
+    },
   ],
 
   async execute(inputs, params, context) {
-    const image = inputs.image as ImageData | null;
+    const input = inputs.image as ImageData | GPUTexture | null;
 
-    if (!image) {
+    if (!input) {
       return { image: null };
     }
 
@@ -100,12 +109,68 @@ export const ReorderChannelsNode = defineNode({
       blueSource: string;
       alphaSource: string;
     };
+    const preview = params.preview as boolean;
+
+    // Map channel names to indices
+    const channelMap: Record<string, number> = {
+      red: 0,
+      green: 1,
+      blue: 2,
+      alpha: 3,
+      zero: 4,
+      one: 5,
+    };
+
+    // GPU path
+    if (context.gpu?.isAvailable) {
+      const gpu = context.gpu;
+
+      let inputTexture: GPUTexture;
+      let needsInputRelease = false;
+
+      if (isGPUTexture(input)) {
+        inputTexture = input;
+      } else {
+        inputTexture = gpu.createTexture(input);
+        needsInputRelease = true;
+      }
+
+      const { width, height } = inputTexture;
+      const outputTexture = gpu.createEmptyTexture(width, height);
+
+      gpu.renderToTexture('channel_reorder', {
+        u_texture: inputTexture.texture,
+        u_channelMap: [
+          channelMap[redSource],
+          channelMap[greenSource],
+          channelMap[blueSource],
+          channelMap[alphaSource],
+        ],
+      }, outputTexture);
+
+      if (needsInputRelease) {
+        gpu.releaseTexture(inputTexture.id);
+      }
+
+      if (preview) {
+        const result = gpu.downloadTexture(outputTexture);
+        gpu.releaseTexture(outputTexture.id);
+        return { image: result };
+      }
+
+      return { image: outputTexture };
+    }
+
+    // CPU fallback
+    const image = ensureImageData(input, context);
+    if (!image) {
+      return { image: null };
+    }
 
     const result = new ImageData(image.width, image.height);
     const src = image.data;
     const dst = result.data;
 
-    // Helper to get channel value
     const getChannelValue = (i: number, channel: string): number => {
       switch (channel) {
         case 'red': return src[i];
@@ -119,7 +184,6 @@ export const ReorderChannelsNode = defineNode({
     };
 
     const totalPixels = image.width * image.height;
-    const reportInterval = Math.floor(totalPixels / 10);
 
     for (let p = 0; p < totalPixels; p++) {
       const i = p * 4;
@@ -128,10 +192,6 @@ export const ReorderChannelsNode = defineNode({
       dst[i + 1] = getChannelValue(i, greenSource);
       dst[i + 2] = getChannelValue(i, blueSource);
       dst[i + 3] = getChannelValue(i, alphaSource);
-
-      if (p % reportInterval === 0) {
-        context.reportProgress(p / totalPixels);
-      }
     }
 
     return { image: result };

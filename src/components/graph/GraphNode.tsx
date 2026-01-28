@@ -23,6 +23,8 @@ interface GraphNodeProps {
     y: number
   ) => void;
   onConnectionEnd: (nodeId: string, portId: string) => void;
+  onParameterChange?: (nodeId: string, paramId: string, value: unknown) => void;
+  onParameterCommit?: (nodeId: string, paramId: string) => void;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -49,6 +51,8 @@ export function GraphNode({
   onMoveEnd,
   onConnectionStart,
   onConnectionEnd,
+  onParameterChange,
+  onParameterCommit,
 }: GraphNodeProps) {
   const definition = NodeRegistry.get(node.type);
   const isDragging = useRef(false);
@@ -57,6 +61,22 @@ export function GraphNode({
   const [hasPreview, setHasPreview] = useState(false);
 
   const categoryColor = CATEGORY_COLORS[definition?.category || 'Utility'];
+
+  // Check if this node has a preview parameter
+  const hasPreviewParam = useMemo(() => {
+    return definition?.parameters?.some(p => p.id === 'preview' && p.type === 'boolean') ?? false;
+  }, [definition]);
+
+  const previewEnabled = hasPreviewParam ? (node.parameters.preview as boolean) ?? false : false;
+
+  // Handle preview toggle click
+  const handlePreviewToggle = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onParameterChange && onParameterCommit) {
+      onParameterChange(node.id, 'preview', !previewEnabled);
+      onParameterCommit(node.id, 'preview');
+    }
+  }, [node.id, previewEnabled, onParameterChange, onParameterCommit]);
 
   // Find the first image output for preview
   const previewImage = useMemo(() => {
@@ -303,11 +323,46 @@ export function GraphNode({
           className="w-2 h-2 rounded-full"
           style={{ backgroundColor: categoryColor }}
         />
-        <span className="text-sm font-medium text-editor-text truncate">
+        <span className="text-sm font-medium text-editor-text truncate flex-1">
           {definition.name}
         </span>
+        {/* Preview toggle - eye icon */}
+        {hasPreviewParam && (
+          <button
+            className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors ${
+              previewEnabled
+                ? 'bg-editor-accent/30 text-editor-accent'
+                : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
+            }`}
+            onClick={handlePreviewToggle}
+            title={previewEnabled ? 'Hide preview (keep on GPU)' : 'Show preview (download from GPU)'}
+          >
+            <svg
+              className="w-3 h-3"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {previewEnabled ? (
+                <>
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </>
+              ) : (
+                <>
+                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                  <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </>
+              )}
+            </svg>
+          </button>
+        )}
         {runtimeState?.executionState === 'running' && (
-          <div className="ml-auto w-3 h-3 border-2 border-editor-warning border-t-transparent rounded-full animate-spin" />
+          <div className="w-3 h-3 border-2 border-editor-warning border-t-transparent rounded-full animate-spin" />
         )}
       </div>
 

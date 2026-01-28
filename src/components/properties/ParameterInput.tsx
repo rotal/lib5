@@ -26,7 +26,11 @@ export function ParameterInput({
       const reader = new FileReader();
       reader.onload = () => {
         console.log('ParameterInput - file read as data URL, length:', (reader.result as string)?.length);
-        onChange(reader.result as string);
+        // Store both data URL and filename for persistence
+        onChange({
+          dataUrl: reader.result as string,
+          filename: file.name,
+        });
         onChangeEnd();
       };
       reader.readAsDataURL(file);
@@ -127,8 +131,18 @@ export function ParameterInput({
     }
 
     case 'file': {
-      const hasFile = typeof value === 'string' && value.startsWith('data:');
-      const fileLabel = hasFile ? 'Image loaded' : 'Select file...';
+      // Support both old format (string) and new format (object with dataUrl and filename)
+      const fileValue = value as { dataUrl: string; filename: string } | string | null;
+      const hasFile = fileValue !== null && (
+        (typeof fileValue === 'string' && fileValue.startsWith('data:')) ||
+        (typeof fileValue === 'object' && fileValue.dataUrl?.startsWith('data:'))
+      );
+      const filename = typeof fileValue === 'object' && fileValue?.filename
+        ? fileValue.filename
+        : null;
+      const fileLabel = hasFile
+        ? (filename || 'Image loaded')
+        : 'Select file...';
       return (
         <div>
           <label className="block text-xs text-editor-text-dim mb-1">
@@ -143,6 +157,7 @@ export function ParameterInput({
                   ? 'bg-green-900/30 border-green-600 text-green-400'
                   : 'bg-editor-surface-light border-editor-border text-editor-text hover:bg-editor-border'
               }`}
+              title={filename || undefined}
             >
               {fileLabel}
             </button>
@@ -169,7 +184,9 @@ export function ParameterInput({
             className="hidden"
           />
           {hasFile && (
-            <p className="text-xs text-green-400 mt-1">Image ready</p>
+            <p className="text-xs text-green-400 mt-1">
+              {filename ? `Ready: ${filename}` : 'Image ready'}
+            </p>
           )}
         </div>
       );

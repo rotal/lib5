@@ -1,4 +1,6 @@
 import { defineNode } from '../defineNode';
+import { isGPUTexture } from '../../../types/data';
+import type { GPUTexture } from '../../../types/gpu';
 
 export const ExportNode = defineNode({
   type: 'output/export',
@@ -55,14 +57,25 @@ export const ExportNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const image = inputs.image as ImageData | null;
+    const input = inputs.image as ImageData | GPUTexture | null;
     const filename = params.filename as string;
     const format = params.format as 'png' | 'jpeg' | 'webp';
     const quality = (params.quality as number) / 100;
     const autoDownload = params.autoDownload as boolean;
 
-    if (!image) {
+    if (!input) {
       return {};
+    }
+
+    // Download from GPU if needed
+    let image: ImageData;
+    if (isGPUTexture(input)) {
+      if (!context.gpu) {
+        throw new Error('GPU context required to download texture');
+      }
+      image = context.gpu.downloadTexture(input);
+    } else {
+      image = input;
     }
 
     // Create canvas and draw image

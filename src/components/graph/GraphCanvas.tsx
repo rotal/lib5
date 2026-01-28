@@ -50,6 +50,8 @@ export function GraphCanvas() {
     updateConnectionDrag,
     endConnectionDrag,
     cancelConnectionDrag,
+    updateNodeParameter,
+    commitParameterChange,
   } = useGraph();
 
   const { showContextMenu } = useUiStore();
@@ -404,6 +406,8 @@ export function GraphCanvas() {
             onMoveEnd={commitNodeMove}
             onConnectionStart={handleConnectionStart}
             onConnectionEnd={handleConnectionEnd}
+            onParameterChange={updateNodeParameter}
+            onParameterCommit={commitParameterChange}
           />
         ))}
       </div>

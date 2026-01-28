@@ -1,4 +1,6 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
+import { isGPUTexture } from '../../../types/data';
+import type { GPUTexture } from '../../../types/gpu';
 
 // Convert RGB to HSL
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
@@ -105,20 +107,70 @@ export const HueSaturationNode = defineNode({
       default: 0,
       constraints: { min: -100, max: 100, step: 1 },
     },
+    {
+      id: 'preview',
+      name: 'Preview',
+      type: 'boolean',
+      default: false,
+      description: 'Show preview (downloads from GPU)',
+    },
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = inputs.image as ImageData | null;
+    const input = inputs.image as ImageData | GPUTexture | null;
 
-    if (!inputImage) {
+    if (!input) {
       return { image: null };
     }
 
     const hueShift = (params.hue as number) / 360;
     const saturationChange = (params.saturation as number) / 100;
     const lightnessChange = (params.lightness as number) / 100;
+    const preview = params.preview as boolean;
 
-    // Create output image
+    // GPU path
+    if (context.gpu?.isAvailable) {
+      const gpu = context.gpu;
+
+      let inputTexture: GPUTexture;
+      let needsInputRelease = false;
+
+      if (isGPUTexture(input)) {
+        inputTexture = input;
+      } else {
+        inputTexture = gpu.createTexture(input);
+        needsInputRelease = true;
+      }
+
+      const { width, height } = inputTexture;
+      const outputTexture = gpu.createEmptyTexture(width, height);
+
+      gpu.renderToTexture('hue_saturation', {
+        u_texture: inputTexture.texture,
+        u_hueShift: hueShift,
+        u_saturation: saturationChange,
+        u_lightness: lightnessChange,
+      }, outputTexture);
+
+      if (needsInputRelease) {
+        gpu.releaseTexture(inputTexture.id);
+      }
+
+      if (preview) {
+        const result = gpu.downloadTexture(outputTexture);
+        gpu.releaseTexture(outputTexture.id);
+        return { image: result };
+      }
+
+      return { image: outputTexture };
+    }
+
+    // CPU fallback
+    const inputImage = ensureImageData(input, context);
+    if (!inputImage) {
+      return { image: null };
+    }
+
     const outputImage = new ImageData(
       new Uint8ClampedArray(inputImage.data),
       inputImage.width,
@@ -131,10 +183,8 @@ export const HueSaturationNode = defineNode({
       const g = data[i + 1];
       const b = data[i + 2];
 
-      // Convert to HSL
       let [h, s, l] = rgbToHsl(r, g, b);
 
-      // Apply adjustments
       h = (h + hueShift + 1) % 1;
 
       if (saturationChange >= 0) {
@@ -151,7 +201,6 @@ export const HueSaturationNode = defineNode({
       }
       l = Math.max(0, Math.min(1, l));
 
-      // Convert back to RGB
       const [newR, newG, newB] = hslToRgb(h, s, l);
       data[i] = newR;
       data[i + 1] = newG;

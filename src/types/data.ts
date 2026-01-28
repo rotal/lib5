@@ -1,3 +1,5 @@
+import type { GPUTexture } from './gpu';
+
 /**
  * Data types that can flow through node ports
  */
@@ -53,6 +55,7 @@ export interface VideoFrame {
 export type PortValue =
   | ImageData
   | ImageBitmap
+  | GPUTexture
   | number
   | boolean
   | string
@@ -68,7 +71,7 @@ export type PortValue =
  * Mapping of data types to their TypeScript types
  */
 export interface DataTypeMap {
-  image: ImageData | ImageBitmap;
+  image: ImageData | ImageBitmap | GPUTexture;
   mask: ImageData;
   number: number;
   color: Color;
@@ -121,6 +124,21 @@ export function isRect(value: unknown): value is Rect {
     'y' in value &&
     'width' in value &&
     'height' in value
+  );
+}
+
+/**
+ * Type guard for GPUTexture
+ */
+export function isGPUTexture(value: unknown): value is GPUTexture {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'texture' in value &&
+    'framebuffer' in value &&
+    'width' in value &&
+    'height' in value &&
+    'id' in value
   );
 }
 

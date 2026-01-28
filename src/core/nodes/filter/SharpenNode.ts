@@ -1,4 +1,4 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
 
 export const SharpenNode = defineNode({
   type: 'filter/sharpen',
@@ -52,7 +52,7 @@ export const SharpenNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = inputs.image as ImageData | null;
+    const inputImage = ensureImageData(inputs.image, context);
 
     if (!inputImage) {
       return { image: null };

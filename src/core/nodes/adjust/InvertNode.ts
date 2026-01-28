@@ -1,4 +1,6 @@
-import { defineNode } from '../defineNode';
+import { defineNode, ensureImageData } from '../defineNode';
+import { isGPUTexture } from '../../../types/data';
+import type { GPUTexture } from '../../../types/gpu';
 
 export const InvertNode = defineNode({
   type: 'adjust/invert',
@@ -32,18 +34,66 @@ export const InvertNode = defineNode({
       default: false,
       description: 'Also invert the alpha channel',
     },
+    {
+      id: 'preview',
+      name: 'Preview',
+      type: 'boolean',
+      default: false,
+      description: 'Show preview (downloads from GPU)',
+    },
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = inputs.image as ImageData | null;
+    const input = inputs.image as ImageData | GPUTexture | null;
 
-    if (!inputImage) {
+    if (!input) {
       return { image: null };
     }
 
     const invertAlpha = params.invertAlpha as boolean;
+    const preview = params.preview as boolean;
 
-    // Create output image
+    // GPU path
+    if (context.gpu?.isAvailable) {
+      const gpu = context.gpu;
+
+      let inputTexture: GPUTexture;
+      let needsInputRelease = false;
+
+      if (isGPUTexture(input)) {
+        inputTexture = input;
+      } else {
+        inputTexture = gpu.createTexture(input);
+        needsInputRelease = true;
+      }
+
+      const { width, height } = inputTexture;
+      const outputTexture = gpu.createEmptyTexture(width, height);
+
+      gpu.renderToTexture('invert', {
+        u_texture: inputTexture.texture,
+        u_invertAlpha: invertAlpha,
+      }, outputTexture);
+
+      if (needsInputRelease) {
+        gpu.releaseTexture(inputTexture.id);
+      }
+
+      if (preview) {
+        const result = gpu.downloadTexture(outputTexture);
+        gpu.releaseTexture(outputTexture.id);
+        return { image: result };
+      }
+
+      return { image: outputTexture };
+    }
+
+    // CPU fallback
+    const inputImage = ensureImageData(input, context);
+    if (!inputImage) {
+      return { image: null };
+    }
+
     const outputImage = new ImageData(
       new Uint8ClampedArray(inputImage.data),
       inputImage.width,

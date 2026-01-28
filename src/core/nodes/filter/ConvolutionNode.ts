@@ -1,4 +1,7 @@
 import { defineNode } from '../defineNode';
+import { isGPUTexture } from '../../../types/data';
+import type { GPUContext, GPUTexture } from '../../../types/gpu';
+import type { ExecutionContext } from '../../../types/node';
 
 const PRESET_KERNELS: Record<string, number[][]> = {
   identity: [
@@ -42,6 +45,151 @@ const PRESET_KERNELS: Record<string, number[][]> = {
     [1, 2, 1],
   ],
 };
+
+/**
+ * Get and optionally normalize a kernel
+ */
+function getKernel(preset: string, customKernel: string, normalize: boolean): number[][] {
+  let kernel: number[][];
+  if (preset === 'custom') {
+    try {
+      kernel = customKernel.split(';').map(row =>
+        row.split(',').map(v => parseFloat(v.trim()))
+      );
+    } catch {
+      kernel = PRESET_KERNELS.identity;
+    }
+  } else {
+    // Deep copy preset kernel
+    kernel = (PRESET_KERNELS[preset] || PRESET_KERNELS.identity).map(row => [...row]);
+  }
+
+  if (normalize) {
+    let sum = 0;
+    for (const row of kernel) {
+      for (const val of row) {
+        sum += val;
+      }
+    }
+    if (sum !== 0 && sum !== 1) {
+      for (const row of kernel) {
+        for (let i = 0; i < row.length; i++) {
+          row[i] /= sum;
+        }
+      }
+    }
+  }
+
+  return kernel;
+}
+
+/**
+ * GPU convolution implementation
+ */
+function executeGPU(
+  input: ImageData | GPUTexture,
+  kernel: number[][],
+  strength: number,
+  gpu: GPUContext
+): GPUTexture {
+  let inputTexture: GPUTexture;
+  let needsInputRelease = false;
+
+  if (isGPUTexture(input)) {
+    inputTexture = input;
+  } else {
+    inputTexture = gpu.createTexture(input);
+    needsInputRelease = true;
+  }
+
+  const { width, height } = inputTexture;
+  const kernelHeight = kernel.length;
+  const kernelWidth = kernel[0]?.length || 0;
+
+  // Flatten kernel and pad to max 49 elements (7x7)
+  const flatKernel = new Float32Array(49);
+  for (let y = 0; y < kernelHeight && y < 7; y++) {
+    for (let x = 0; x < kernelWidth && x < 7; x++) {
+      flatKernel[y * kernelWidth + x] = kernel[y][x];
+    }
+  }
+
+  const outputTexture = gpu.createEmptyTexture(width, height);
+
+  gpu.renderToTexture('convolution', {
+    u_texture: inputTexture.texture,
+    u_texelSize: [1.0 / width, 1.0 / height],
+    u_kernel: flatKernel,
+    u_kernelWidth: Math.min(kernelWidth, 7),
+    u_kernelHeight: Math.min(kernelHeight, 7),
+    u_strength: strength,
+  }, outputTexture);
+
+  if (needsInputRelease) {
+    gpu.releaseTexture(inputTexture.id);
+  }
+
+  return outputTexture;
+}
+
+/**
+ * CPU convolution implementation (fallback)
+ */
+function executeCPU(
+  inputImage: ImageData,
+  kernel: number[][],
+  strength: number,
+  context: ExecutionContext
+): ImageData {
+  const kernelHeight = kernel.length;
+  const kernelWidth = kernel[0]?.length || 0;
+  const { width, height, data: srcData } = inputImage;
+  const outputImage = new ImageData(width, height);
+  const dstData = outputImage.data;
+
+  const halfKH = Math.floor(kernelHeight / 2);
+  const halfKW = Math.floor(kernelWidth / 2);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let r = 0, g = 0, b = 0;
+
+      for (let ky = 0; ky < kernelHeight; ky++) {
+        for (let kx = 0; kx < kernelWidth; kx++) {
+          const sx = Math.max(0, Math.min(width - 1, x + kx - halfKW));
+          const sy = Math.max(0, Math.min(height - 1, y + ky - halfKH));
+          const srcIdx = (sy * width + sx) * 4;
+          const weight = kernel[ky][kx];
+
+          r += srcData[srcIdx] * weight;
+          g += srcData[srcIdx + 1] * weight;
+          b += srcData[srcIdx + 2] * weight;
+        }
+      }
+
+      const dstIdx = (y * width + x) * 4;
+      const origIdx = (y * width + x) * 4;
+
+      // Blend with original based on strength
+      dstData[dstIdx] = Math.max(0, Math.min(255, Math.round(
+        srcData[origIdx] * (1 - strength) + r * strength
+      )));
+      dstData[dstIdx + 1] = Math.max(0, Math.min(255, Math.round(
+        srcData[origIdx + 1] * (1 - strength) + g * strength
+      )));
+      dstData[dstIdx + 2] = Math.max(0, Math.min(255, Math.round(
+        srcData[origIdx + 2] * (1 - strength) + b * strength
+      )));
+      dstData[dstIdx + 3] = srcData[origIdx + 3];
+    }
+
+    if (y % 50 === 0) {
+      context.reportProgress(y / height);
+    }
+  }
+
+  return outputImage;
+}
 
 export const ConvolutionNode = defineNode({
   type: 'filter/convolution',
@@ -106,12 +254,19 @@ export const ConvolutionNode = defineNode({
       default: true,
       description: 'Normalize kernel weights',
     },
+    {
+      id: 'preview',
+      name: 'Preview',
+      type: 'boolean',
+      default: false,
+      description: 'Show preview (downloads from GPU)',
+    },
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = inputs.image as ImageData | null;
+    const input = inputs.image as ImageData | GPUTexture | null;
 
-    if (!inputImage) {
+    if (!input) {
       return { image: null };
     }
 
@@ -120,96 +275,53 @@ export const ConvolutionNode = defineNode({
     const strength = (params.strength as number) / 100;
     const normalize = params.normalize as boolean;
 
-    // Get kernel
-    let kernel: number[][];
-    if (preset === 'custom') {
-      try {
-        kernel = customKernel.split(';').map(row =>
-          row.split(',').map(v => parseFloat(v.trim()))
-        );
-      } catch {
-        kernel = PRESET_KERNELS.identity;
-      }
-    } else {
-      kernel = PRESET_KERNELS[preset] || PRESET_KERNELS.identity;
-    }
-
+    const kernel = getKernel(preset, customKernel, normalize);
     const kernelHeight = kernel.length;
     const kernelWidth = kernel[0]?.length || 0;
 
     if (kernelHeight === 0 || kernelWidth === 0) {
+      if (isGPUTexture(input)) {
+        context.gpu?.retainTexture(input.id);
+        return { image: input };
+      }
       return {
         image: new ImageData(
-          new Uint8ClampedArray(inputImage.data),
-          inputImage.width,
-          inputImage.height
+          new Uint8ClampedArray(input.data),
+          input.width,
+          input.height
         ),
       };
     }
 
-    // Normalize kernel if requested
-    if (normalize) {
-      let sum = 0;
-      for (const row of kernel) {
-        for (const val of row) {
-          sum += val;
+    // Try GPU path (supports up to 7x7 kernels)
+    if (context.gpu?.isAvailable && kernelWidth <= 7 && kernelHeight <= 7) {
+      try {
+        const gpuResult = executeGPU(input, kernel, strength, context.gpu);
+        context.reportProgress(1);
+
+        // Download only if preview is enabled
+        if (params.preview) {
+          const result = context.gpu.downloadTexture(gpuResult);
+          context.gpu.releaseTexture(gpuResult.id);
+          return { image: result };
         }
-      }
-      if (sum !== 0 && sum !== 1) {
-        for (const row of kernel) {
-          for (let i = 0; i < row.length; i++) {
-            row[i] /= sum;
-          }
-        }
+
+        return { image: gpuResult };
+      } catch (error) {
+        console.warn('GPU convolution failed, falling back to CPU:', error);
       }
     }
 
-    const { width, height, data: srcData } = inputImage;
-    const outputImage = new ImageData(width, height);
-    const dstData = outputImage.data;
-
-    const halfKH = Math.floor(kernelHeight / 2);
-    const halfKW = Math.floor(kernelWidth / 2);
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        let r = 0, g = 0, b = 0;
-
-        for (let ky = 0; ky < kernelHeight; ky++) {
-          for (let kx = 0; kx < kernelWidth; kx++) {
-            const sx = Math.max(0, Math.min(width - 1, x + kx - halfKW));
-            const sy = Math.max(0, Math.min(height - 1, y + ky - halfKH));
-            const srcIdx = (sy * width + sx) * 4;
-            const weight = kernel[ky][kx];
-
-            r += srcData[srcIdx] * weight;
-            g += srcData[srcIdx + 1] * weight;
-            b += srcData[srcIdx + 2] * weight;
-          }
-        }
-
-        const dstIdx = (y * width + x) * 4;
-        const origIdx = (y * width + x) * 4;
-
-        // Blend with original based on strength
-        dstData[dstIdx] = Math.max(0, Math.min(255, Math.round(
-          srcData[origIdx] * (1 - strength) + r * strength
-        )));
-        dstData[dstIdx + 1] = Math.max(0, Math.min(255, Math.round(
-          srcData[origIdx + 1] * (1 - strength) + g * strength
-        )));
-        dstData[dstIdx + 2] = Math.max(0, Math.min(255, Math.round(
-          srcData[origIdx + 2] * (1 - strength) + b * strength
-        )));
-        dstData[dstIdx + 3] = srcData[origIdx + 3]; // Preserve alpha
-      }
-
-      if (y % 50 === 0) {
-        context.reportProgress(y / height);
-      }
+    // CPU fallback
+    let inputImage: ImageData;
+    if (isGPUTexture(input)) {
+      inputImage = context.gpu!.downloadTexture(input);
+    } else {
+      inputImage = input;
     }
 
+    const result = executeCPU(inputImage, kernel, strength, context);
     context.reportProgress(1);
-    return { image: outputImage };
+    return { image: result };
   },
 });

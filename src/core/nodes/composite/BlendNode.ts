@@ -1,7 +1,87 @@
 import { defineNode } from '../defineNode';
+import { isGPUTexture } from '../../../types/data';
+import type { GPUContext, GPUTexture } from '../../../types/gpu';
 
 type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' |
   'colorDodge' | 'colorBurn' | 'hardLight' | 'softLight' | 'difference' | 'exclusion';
+
+// Blend mode to shader constant mapping
+const BLEND_MODE_MAP: Record<BlendMode, number> = {
+  normal: 0,
+  multiply: 1,
+  screen: 2,
+  overlay: 3,
+  darken: 4,
+  lighten: 5,
+  colorDodge: 6,
+  colorBurn: 7,
+  hardLight: 8,
+  softLight: 9,
+  difference: 10,
+  exclusion: 11,
+};
+
+/**
+ * GPU blend implementation
+ */
+function executeGPU(
+  base: ImageData | GPUTexture,
+  blend: ImageData | GPUTexture,
+  mask: ImageData | GPUTexture | null,
+  mode: BlendMode,
+  opacity: number,
+  gpu: GPUContext
+): GPUTexture {
+  // Create textures as needed
+  let baseTexture: GPUTexture;
+  let blendTexture: GPUTexture;
+  let maskTexture: GPUTexture | null = null;
+  const texturesToRelease: string[] = [];
+
+  if (isGPUTexture(base)) {
+    baseTexture = base;
+  } else {
+    baseTexture = gpu.createTexture(base);
+    texturesToRelease.push(baseTexture.id);
+  }
+
+  if (isGPUTexture(blend)) {
+    blendTexture = blend;
+  } else {
+    blendTexture = gpu.createTexture(blend);
+    texturesToRelease.push(blendTexture.id);
+  }
+
+  if (mask) {
+    if (isGPUTexture(mask)) {
+      maskTexture = mask;
+    } else {
+      maskTexture = gpu.createTexture(mask);
+      texturesToRelease.push(maskTexture.id);
+    }
+  }
+
+  const outputTexture = gpu.createEmptyTexture(baseTexture.width, baseTexture.height);
+
+  gpu.renderToTexture('blend', {
+    u_base: baseTexture.texture,
+    u_blend: blendTexture.texture,
+    u_mask: maskTexture?.texture ?? baseTexture.texture, // Use base as dummy if no mask
+    u_blendMode: BLEND_MODE_MAP[mode],
+    u_opacity: opacity,
+    u_hasMask: maskTexture !== null,
+    u_baseSize: [baseTexture.width, baseTexture.height],
+    u_blendSize: [blendTexture.width, blendTexture.height],
+    u_maskSize: maskTexture ? [maskTexture.width, maskTexture.height] : [0, 0],
+  }, outputTexture);
+
+  // Cleanup temporary textures
+  for (const id of texturesToRelease) {
+    gpu.releaseTexture(id);
+  }
+
+  return outputTexture;
+}
 
 function blendPixel(
   baseR: number, baseG: number, baseB: number,
@@ -135,29 +215,86 @@ export const BlendNode = defineNode({
       default: 100,
       constraints: { min: 0, max: 100, step: 1 },
     },
+    {
+      id: 'preview',
+      name: 'Preview',
+      type: 'boolean',
+      default: false,
+      description: 'Show preview (downloads from GPU)',
+    },
   ],
 
   async execute(inputs, params, context) {
-    const baseImage = inputs.base as ImageData | null;
-    const blendImage = inputs.blend as ImageData | null;
-    const maskImage = inputs.mask as ImageData | null;
+    const baseInput = inputs.base as ImageData | GPUTexture | null;
+    const blendInput = inputs.blend as ImageData | GPUTexture | null;
+    const maskInput = inputs.mask as ImageData | GPUTexture | null;
 
-    if (!baseImage) {
-      return { image: blendImage || null };
+    if (!baseInput) {
+      if (blendInput && isGPUTexture(blendInput)) {
+        context.gpu?.retainTexture(blendInput.id);
+      }
+      return { image: blendInput || null };
     }
 
-    if (!blendImage) {
+    if (!blendInput) {
+      if (isGPUTexture(baseInput)) {
+        context.gpu?.retainTexture(baseInput.id);
+        return { image: baseInput };
+      }
       return {
         image: new ImageData(
-          new Uint8ClampedArray(baseImage.data),
-          baseImage.width,
-          baseImage.height
+          new Uint8ClampedArray(baseInput.data),
+          baseInput.width,
+          baseInput.height
         ),
       };
     }
 
     const mode = params.mode as BlendMode;
     const opacity = (params.opacity as number) / 100;
+
+    // Try GPU path
+    if (context.gpu?.isAvailable) {
+      try {
+        const gpuResult = executeGPU(baseInput, blendInput, maskInput, mode, opacity, context.gpu);
+
+        // Download only if preview is enabled
+        if (params.preview) {
+          const result = context.gpu.downloadTexture(gpuResult);
+          context.gpu.releaseTexture(gpuResult.id);
+          return { image: result };
+        }
+
+        return { image: gpuResult };
+      } catch (error) {
+        console.warn('GPU blend failed, falling back to CPU:', error);
+      }
+    }
+
+    // CPU fallback - need ImageData
+    let baseImage: ImageData;
+    let blendImage: ImageData;
+    let maskImage: ImageData | null = null;
+
+    if (isGPUTexture(baseInput)) {
+      baseImage = context.gpu!.downloadTexture(baseInput);
+    } else {
+      baseImage = baseInput;
+    }
+
+    if (isGPUTexture(blendInput)) {
+      blendImage = context.gpu!.downloadTexture(blendInput);
+    } else {
+      blendImage = blendInput;
+    }
+
+    if (maskInput) {
+      if (isGPUTexture(maskInput)) {
+        maskImage = context.gpu!.downloadTexture(maskInput);
+      } else {
+        maskImage = maskInput;
+      }
+    }
 
     // Use base dimensions as output
     const { width, height } = baseImage;

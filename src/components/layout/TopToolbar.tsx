@@ -1,6 +1,6 @@
 import React, { useCallback, useRef } from 'react';
 import { useGraph } from '../../hooks/useGraph';
-import { useGraphStore, useUiStore } from '../../store';
+import { useGraphStore, useUiStore, useExecutionStore } from '../../store';
 import { Button } from '../ui';
 import { serializeGraph, deserializeGraph } from '../../types/graph';
 import { validateGraph } from '../../core/graph/GraphValidator';
@@ -18,6 +18,7 @@ export function TopToolbar() {
 
   const { newGraph, loadGraph, setGraphName } = useGraphStore();
   const { setViewMode, viewMode, showToast, liveEdit, toggleLiveEdit } = useUiStore();
+  const executionStore = useExecutionStore();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -72,6 +73,19 @@ export function TopToolbar() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   }, [graph]);
+
+  // Toggle live mode and execute if turning on
+  const handleToggleLiveEdit = useCallback(() => {
+    const wasOff = !liveEdit;
+    toggleLiveEdit();
+
+    // If turning on live mode, trigger execution
+    if (wasOff && !executionStore.isExecuting) {
+      const freshGraph = useGraphStore.getState().graph;
+      executionStore.updateEngineGraph(freshGraph);
+      executionStore.execute();
+    }
+  }, [liveEdit, toggleLiveEdit, executionStore]);
 
   // Execute
   const handleExecute = useCallback(async () => {
@@ -177,7 +191,7 @@ export function TopToolbar() {
 
       {/* Live Edit Toggle */}
       <button
-        onClick={toggleLiveEdit}
+        onClick={handleToggleLiveEdit}
         className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 ${
           liveEdit
             ? 'bg-green-600 text-white'

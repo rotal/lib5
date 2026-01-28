@@ -28,7 +28,8 @@ export function useGraph() {
   const addNode = useCallback((type: string, x: number, y: number) => {
     const nodeId = graphStore.addNode(type, x, y);
     if (nodeId) {
-      historyStore.saveState(graphStore.graph, `Add ${type} node`);
+      const freshGraph = useGraphStore.getState().graph;
+      historyStore.saveState(freshGraph, `Add ${type} node`);
     }
     return nodeId;
   }, [graphStore, historyStore]);
@@ -37,7 +38,8 @@ export function useGraph() {
   const removeNodes = useCallback((nodeIds: string[]) => {
     if (nodeIds.length === 0) return;
     graphStore.removeNodes(nodeIds);
-    historyStore.saveState(graphStore.graph, `Remove ${nodeIds.length} node(s)`);
+    const freshGraph = useGraphStore.getState().graph;
+    historyStore.saveState(freshGraph, `Remove ${nodeIds.length} node(s)`);
   }, [graphStore, historyStore]);
 
   // Add edge with history
@@ -49,14 +51,18 @@ export function useGraph() {
   ) => {
     const edgeId = graphStore.addEdge(sourceNodeId, sourcePortId, targetNodeId, targetPortId);
     if (edgeId) {
-      historyStore.saveState(graphStore.graph, 'Connect nodes');
+      // Get fresh graph state after update
+      const freshGraph = useGraphStore.getState().graph;
+      historyStore.saveState(freshGraph, 'Connect nodes');
 
       // Mark downstream nodes as dirty and execute
-      const dirtyNodes = [targetNodeId, ...getDownstreamNodes(graphStore.graph, targetNodeId)];
+      const dirtyNodes = [targetNodeId, ...getDownstreamNodes(freshGraph, targetNodeId)];
       executionStore.markNodesDirty(Array.from(dirtyNodes));
 
       // Auto-execute if live edit is enabled
       if (uiStore.liveEdit && !executionStore.isExecuting) {
+        // Ensure engine has the latest graph before executing
+        executionStore.updateEngineGraph(freshGraph);
         executionStore.execute();
       }
     }
@@ -67,21 +73,25 @@ export function useGraph() {
   const removeEdges = useCallback((edgeIds: string[]) => {
     if (edgeIds.length === 0) return;
 
-    // Get target nodes before removing edges
+    // Get target nodes before removing edges (need old graph state here)
+    const currentGraph = useGraphStore.getState().graph;
     const targetNodes = edgeIds.map(id => {
-      const edge = graphStore.graph.edges[id];
+      const edge = currentGraph.edges[id];
       return edge?.targetNodeId;
     }).filter(Boolean) as string[];
 
     graphStore.removeEdges(edgeIds);
-    historyStore.saveState(graphStore.graph, `Remove ${edgeIds.length} connection(s)`);
+
+    // Get fresh graph state after removal
+    const freshGraph = useGraphStore.getState().graph;
+    historyStore.saveState(freshGraph, `Remove ${edgeIds.length} connection(s)`);
 
     // Mark downstream nodes as dirty
     if (targetNodes.length > 0) {
       const dirtyNodes = new Set<string>();
       for (const nodeId of targetNodes) {
         dirtyNodes.add(nodeId);
-        for (const downstream of getDownstreamNodes(graphStore.graph, nodeId)) {
+        for (const downstream of getDownstreamNodes(freshGraph, nodeId)) {
           dirtyNodes.add(downstream);
         }
       }
@@ -97,21 +107,34 @@ export function useGraph() {
   ) => {
     graphStore.updateNodeParameter(nodeId, paramId, value);
 
+    // Get fresh graph state after update (not stale closure reference)
+    const freshGraph = useGraphStore.getState().graph;
+
     // Mark node and downstream as dirty
-    const dirtyNodes = [nodeId, ...getDownstreamNodes(graphStore.graph, nodeId)];
+    const dirtyNodes = [nodeId, ...getDownstreamNodes(freshGraph, nodeId)];
     executionStore.markNodesDirty(Array.from(dirtyNodes));
-  }, [graphStore, executionStore]);
+
+    // In live mode, execute immediately on parameter change
+    if (uiStore.liveEdit && !executionStore.isExecuting) {
+      executionStore.updateEngineGraph(freshGraph);
+      executionStore.execute();
+    }
+  }, [graphStore, executionStore, uiStore.liveEdit]);
 
   // Save parameter change to history (debounced, called on mouse up)
   // Also triggers auto-execute if live edit is enabled
   const commitParameterChange = useCallback((_nodeId: string, paramId: string) => {
-    historyStore.saveState(graphStore.graph, `Change ${paramId}`);
+    // Get fresh graph state
+    const freshGraph = useGraphStore.getState().graph;
+    historyStore.saveState(freshGraph, `Change ${paramId}`);
 
     // Auto-execute if live edit is enabled
     if (uiStore.liveEdit && !executionStore.isExecuting) {
+      // Ensure engine has the latest graph before executing
+      executionStore.updateEngineGraph(freshGraph);
       executionStore.execute();
     }
-  }, [graphStore, historyStore, uiStore.liveEdit, executionStore]);
+  }, [historyStore, uiStore.liveEdit, executionStore]);
 
   // Move node (no history until commit)
   const moveNode = useCallback((nodeId: string, x: number, y: number) => {
@@ -120,8 +143,9 @@ export function useGraph() {
 
   // Commit node move to history
   const commitNodeMove = useCallback(() => {
-    historyStore.saveState(graphStore.graph, 'Move node(s)');
-  }, [graphStore, historyStore]);
+    const freshGraph = useGraphStore.getState().graph;
+    historyStore.saveState(freshGraph, 'Move node(s)');
+  }, [historyStore]);
 
   // Undo
   const undo = useCallback(() => {
@@ -183,7 +207,8 @@ export function useGraph() {
 
   const paste = useCallback((offsetX?: number, offsetY?: number) => {
     graphStore.paste(offsetX, offsetY);
-    historyStore.saveState(graphStore.graph, 'Paste');
+    const freshGraph = useGraphStore.getState().graph;
+    historyStore.saveState(freshGraph, 'Paste');
   }, [graphStore, historyStore]);
 
   // Select all

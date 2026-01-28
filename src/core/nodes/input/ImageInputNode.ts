@@ -29,10 +29,10 @@ export const ImageInputNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const file = params.file as File | string | null;
-    console.log('ImageInputNode execute - file:', file);
+    const fileParam = params.file as File | string | { dataUrl: string; filename: string } | null;
+    console.log('ImageInputNode execute - file:', fileParam);
 
-    if (!file) {
+    if (!fileParam) {
       // Return transparent 1x1 image as placeholder
       console.log('ImageInputNode - no file, returning 1x1 placeholder');
       const imageData = new ImageData(1, 1);
@@ -40,8 +40,8 @@ export const ImageInputNode = defineNode({
     }
 
     // If file is a File object, read it
-    if (file instanceof File) {
-      console.log('ImageInputNode - loading File:', file.name, file.type, file.size);
+    if (fileParam instanceof File) {
+      console.log('ImageInputNode - loading File:', fileParam.name, fileParam.type, fileParam.size);
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
 
@@ -80,13 +80,24 @@ export const ImageInputNode = defineNode({
           reject(new Error('Failed to read file'));
         };
 
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(fileParam);
       });
     }
 
-    // If file is a data URL string
-    if (typeof file === 'string' && file.startsWith('data:')) {
-      console.log('ImageInputNode - loading from data URL, length:', file.length);
+    // Extract data URL from either string or object format
+    let dataUrl: string | null = null;
+    let filename: string | null = null;
+
+    if (typeof fileParam === 'string' && fileParam.startsWith('data:')) {
+      dataUrl = fileParam;
+    } else if (typeof fileParam === 'object' && fileParam.dataUrl?.startsWith('data:')) {
+      dataUrl = fileParam.dataUrl;
+      filename = fileParam.filename || null;
+    }
+
+    // If we have a data URL, load it
+    if (dataUrl) {
+      console.log('ImageInputNode - loading from data URL, length:', dataUrl.length, 'filename:', filename);
       return new Promise((resolve, reject) => {
         const img = new Image();
 
@@ -112,7 +123,7 @@ export const ImageInputNode = defineNode({
           reject(new Error('Failed to load image from data URL'));
         };
 
-        img.src = file;
+        img.src = dataUrl;
       });
     }
 
