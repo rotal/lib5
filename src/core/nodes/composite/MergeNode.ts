@@ -1,4 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { FloatImage, createFloatImage, cloneFloatImage } from '../../../types/data';
 
 export const MergeNode = defineNode({
   type: 'composite/merge',
@@ -66,24 +67,18 @@ export const MergeNode = defineNode({
 
   async execute(inputs, params, context) {
     const images = [
-      ensureImageData(inputs.image1, context),
-      ensureImageData(inputs.image2, context),
-      ensureImageData(inputs.image3, context),
-      ensureImageData(inputs.image4, context),
-    ].filter(Boolean) as ImageData[];
+      ensureFloatImage(inputs.image1, context),
+      ensureFloatImage(inputs.image2, context),
+      ensureFloatImage(inputs.image3, context),
+      ensureFloatImage(inputs.image4, context),
+    ].filter(Boolean) as FloatImage[];
 
     if (images.length === 0) {
       return { image: null };
     }
 
     if (images.length === 1) {
-      return {
-        image: new ImageData(
-          new Uint8ClampedArray(images[0].data),
-          images[0].width,
-          images[0].height
-        ),
-      };
+      return { image: cloneFloatImage(images[0]) };
     }
 
     const operation = params.operation as string;
@@ -97,18 +92,18 @@ export const MergeNode = defineNode({
       maxHeight = Math.max(maxHeight, img.height);
     }
 
-    const outputImage = new ImageData(maxWidth, maxHeight);
+    const outputImage = createFloatImage(maxWidth, maxHeight);
     const outData = outputImage.data;
 
-    // Initialize with background color
+    // Initialize with background color (already 0.0-1.0)
     for (let i = 0; i < outData.length; i += 4) {
       outData[i] = bg.r;
       outData[i + 1] = bg.g;
       outData[i + 2] = bg.b;
-      outData[i + 3] = Math.round(bg.a * 255);
+      outData[i + 3] = bg.a;
     }
 
-    // Process based on operation
+    // Process based on operation (all values in 0.0-1.0 range)
     if (operation === 'over') {
       // Stack images on top of each other
       for (const img of images) {
@@ -121,23 +116,17 @@ export const MergeNode = defineNode({
             const srcIdx = (y * srcW + x) * 4;
             const dstIdx = (y * maxWidth + x) * 4;
 
-            const srcA = srcData[srcIdx + 3] / 255;
-            const dstA = outData[dstIdx + 3] / 255;
+            const srcA = srcData[srcIdx + 3];
+            const dstA = outData[dstIdx + 3];
 
             // Porter-Duff "over" operation
             const outA = srcA + dstA * (1 - srcA);
 
             if (outA > 0) {
-              outData[dstIdx] = Math.round(
-                (srcData[srcIdx] * srcA + outData[dstIdx] * dstA * (1 - srcA)) / outA
-              );
-              outData[dstIdx + 1] = Math.round(
-                (srcData[srcIdx + 1] * srcA + outData[dstIdx + 1] * dstA * (1 - srcA)) / outA
-              );
-              outData[dstIdx + 2] = Math.round(
-                (srcData[srcIdx + 2] * srcA + outData[dstIdx + 2] * dstA * (1 - srcA)) / outA
-              );
-              outData[dstIdx + 3] = Math.round(outA * 255);
+              outData[dstIdx] = (srcData[srcIdx] * srcA + outData[dstIdx] * dstA * (1 - srcA)) / outA;
+              outData[dstIdx + 1] = (srcData[srcIdx + 1] * srcA + outData[dstIdx + 1] * dstA * (1 - srcA)) / outA;
+              outData[dstIdx + 2] = (srcData[srcIdx + 2] * srcA + outData[dstIdx + 2] * dstA * (1 - srcA)) / outA;
+              outData[dstIdx + 3] = outA;
             }
           }
         }
@@ -153,10 +142,10 @@ export const MergeNode = defineNode({
             const srcIdx = (y * srcW + x) * 4;
             const dstIdx = (y * maxWidth + x) * 4;
 
-            outData[dstIdx] = Math.min(255, outData[dstIdx] + srcData[srcIdx]);
-            outData[dstIdx + 1] = Math.min(255, outData[dstIdx + 1] + srcData[srcIdx + 1]);
-            outData[dstIdx + 2] = Math.min(255, outData[dstIdx + 2] + srcData[srcIdx + 2]);
-            outData[dstIdx + 3] = Math.min(255, outData[dstIdx + 3] + srcData[srcIdx + 3]);
+            outData[dstIdx] = Math.min(1, outData[dstIdx] + srcData[srcIdx]);
+            outData[dstIdx + 1] = Math.min(1, outData[dstIdx + 1] + srcData[srcIdx + 1]);
+            outData[dstIdx + 2] = Math.min(1, outData[dstIdx + 2] + srcData[srcIdx + 2]);
+            outData[dstIdx + 3] = Math.min(1, outData[dstIdx + 3] + srcData[srcIdx + 3]);
           }
         }
       }
@@ -190,10 +179,10 @@ export const MergeNode = defineNode({
       for (let i = 0; i < count.length; i++) {
         if (count[i] > 0) {
           const dstIdx = i * 4;
-          outData[dstIdx] = Math.round(sumR[i] / count[i]);
-          outData[dstIdx + 1] = Math.round(sumG[i] / count[i]);
-          outData[dstIdx + 2] = Math.round(sumB[i] / count[i]);
-          outData[dstIdx + 3] = Math.round(sumA[i] / count[i]);
+          outData[dstIdx] = sumR[i] / count[i];
+          outData[dstIdx + 1] = sumG[i] / count[i];
+          outData[dstIdx + 2] = sumB[i] / count[i];
+          outData[dstIdx + 3] = sumA[i] / count[i];
         }
       }
     } else if (operation === 'max') {
@@ -216,7 +205,7 @@ export const MergeNode = defineNode({
       }
     } else if (operation === 'min') {
       // Initialize to max for min operation
-      outData.fill(255);
+      outData.fill(1);
 
       for (const img of images) {
         const srcData = img.data;

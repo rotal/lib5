@@ -1,4 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { floatToImageData } from '../../../types/data';
 
 export const AIRemoveBackgroundNode = defineNode({
   type: 'ai/remove-background',
@@ -73,11 +74,14 @@ export const AIRemoveBackgroundNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = ensureImageData(inputs.image, context);
+    const inputFloatImage = ensureFloatImage(inputs.image, context);
 
-    if (!inputImage) {
+    if (!inputFloatImage) {
       return { image: null, mask: null };
     }
+
+    // Convert to ImageData for canvas operations
+    const inputImage = floatToImageData(inputFloatImage);
 
     const provider = params.provider as string;
     const apiEndpoint = params.apiEndpoint as string;

@@ -1,5 +1,5 @@
 import { NodeDefinition, ExecutionContext } from '../../types/node';
-import { isGPUTexture } from '../../types/data';
+import { isGPUTexture, isFloatImage, imageDataToFloat, FloatImage } from '../../types/data';
 
 /**
  * Helper function to define a node with full type safety
@@ -10,17 +10,18 @@ export function defineNode(definition: NodeDefinition): NodeDefinition {
 }
 
 /**
- * Ensure input is ImageData, downloading from GPU if necessary.
+ * Ensure input is FloatImage, converting from GPU texture or ImageData if necessary.
  * Use this in nodes that need to process pixel data on CPU.
  */
-export function ensureImageData(
+export function ensureFloatImage(
   input: unknown,
   context: ExecutionContext
-): ImageData | null {
+): FloatImage | null {
   if (!input) {
     return null;
   }
 
+  // Download from GPU if it's a texture
   if (isGPUTexture(input)) {
     if (!context.gpu) {
       throw new Error('GPU context required to download texture');
@@ -28,16 +29,25 @@ export function ensureImageData(
     return context.gpu.downloadTexture(input);
   }
 
-  // Check if it's an ImageData-like object
-  if (
-    typeof input === 'object' &&
-    input !== null &&
-    'data' in input &&
-    'width' in input &&
-    'height' in input
-  ) {
-    return input as ImageData;
+  // Already a FloatImage
+  if (isFloatImage(input)) {
+    return input;
+  }
+
+  // Convert ImageData to FloatImage
+  if (input instanceof ImageData) {
+    return imageDataToFloat(input);
   }
 
   return null;
+}
+
+/**
+ * @deprecated Use ensureFloatImage instead
+ */
+export function ensureImageData(
+  input: unknown,
+  context: ExecutionContext
+): FloatImage | null {
+  return ensureFloatImage(input, context);
 }

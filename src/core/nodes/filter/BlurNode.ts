@@ -1,5 +1,5 @@
-import { defineNode } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, FloatImage, createFloatImage } from '../../../types/data';
 import type { GPUContext, GPUTexture } from '../../../types/gpu';
 import type { ExecutionContext } from '../../../types/node';
 
@@ -90,14 +90,14 @@ function executeGPU(
 }
 
 /**
- * CPU blur implementation (fallback)
+ * CPU blur implementation (fallback) - uses FloatImage (0.0-1.0)
  */
 function executeCPU(
-  inputImage: ImageData,
+  inputImage: FloatImage,
   radius: number,
   sigma: number,
   context: ExecutionContext
-): ImageData {
+): FloatImage {
   const kernel = generateGaussianKernel(radius, sigma);
   const { width, height, data: srcData } = inputImage;
 
@@ -133,7 +133,7 @@ function executeCPU(
   }
 
   // Second pass: vertical
-  const outputImage = new ImageData(width, height);
+  const outputImage = createFloatImage(width, height);
   const dstData = outputImage.data;
 
   for (let y = 0; y < height; y++) {
@@ -152,10 +152,10 @@ function executeCPU(
       }
 
       const dstIdx = (y * width + x) * 4;
-      dstData[dstIdx] = Math.round(r);
-      dstData[dstIdx + 1] = Math.round(g);
-      dstData[dstIdx + 2] = Math.round(b);
-      dstData[dstIdx + 3] = Math.round(a);
+      dstData[dstIdx] = r;
+      dstData[dstIdx + 1] = g;
+      dstData[dstIdx + 2] = b;
+      dstData[dstIdx + 3] = a;
     }
 
     if (y % 50 === 0) {
@@ -270,12 +270,9 @@ export const BlurNode = defineNode({
     }
 
     // CPU fallback
-    let inputImage: ImageData;
-    if (isGPUTexture(input)) {
-      // Download from GPU if needed
-      inputImage = context.gpu!.downloadTexture(input);
-    } else {
-      inputImage = input;
+    const inputImage = ensureFloatImage(input, context);
+    if (!inputImage) {
+      return { image: null };
     }
 
     const result = executeCPU(inputImage, effectiveRadius, sigma, context);

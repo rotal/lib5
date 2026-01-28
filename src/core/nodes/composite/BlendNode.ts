@@ -1,5 +1,5 @@
-import { defineNode } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, createFloatImage } from '../../../types/data';
 import type { GPUContext, GPUTexture } from '../../../types/gpu';
 
 type BlendMode = 'normal' | 'multiply' | 'screen' | 'overlay' | 'darken' | 'lighten' |
@@ -83,68 +83,56 @@ function executeGPU(
   return outputTexture;
 }
 
+/**
+ * Blend two color channels (values in 0.0-1.0 range)
+ */
+function blendChannel(b: number, l: number, mode: BlendMode): number {
+  switch (mode) {
+    case 'multiply':
+      return b * l;
+    case 'screen':
+      return 1 - (1 - b) * (1 - l);
+    case 'overlay':
+      return b < 0.5 ? 2 * b * l : 1 - 2 * (1 - b) * (1 - l);
+    case 'darken':
+      return Math.min(b, l);
+    case 'lighten':
+      return Math.max(b, l);
+    case 'colorDodge':
+      return l >= 1 ? 1 : Math.min(1, b / (1 - l));
+    case 'colorBurn':
+      return l <= 0 ? 0 : Math.max(0, 1 - (1 - b) / l);
+    case 'hardLight':
+      return l < 0.5 ? 2 * b * l : 1 - 2 * (1 - b) * (1 - l);
+    case 'softLight':
+      if (l < 0.5) {
+        return b - (1 - 2 * l) * b * (1 - b);
+      } else {
+        const d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b);
+        return b + (2 * l - 1) * (d - b);
+      }
+    case 'difference':
+      return Math.abs(b - l);
+    case 'exclusion':
+      return b + l - 2 * b * l;
+    case 'normal':
+    default:
+      return l;
+  }
+}
+
+/**
+ * Blend pixels (values in 0.0-1.0 range)
+ */
 function blendPixel(
   baseR: number, baseG: number, baseB: number,
   blendR: number, blendG: number, blendB: number,
   mode: BlendMode
 ): [number, number, number] {
-  const blend = (base: number, blend: number): number => {
-    const b = base / 255;
-    const l = blend / 255;
-
-    let result: number;
-    switch (mode) {
-      case 'multiply':
-        result = b * l;
-        break;
-      case 'screen':
-        result = 1 - (1 - b) * (1 - l);
-        break;
-      case 'overlay':
-        result = b < 0.5 ? 2 * b * l : 1 - 2 * (1 - b) * (1 - l);
-        break;
-      case 'darken':
-        result = Math.min(b, l);
-        break;
-      case 'lighten':
-        result = Math.max(b, l);
-        break;
-      case 'colorDodge':
-        result = l >= 1 ? 1 : Math.min(1, b / (1 - l));
-        break;
-      case 'colorBurn':
-        result = l <= 0 ? 0 : Math.max(0, 1 - (1 - b) / l);
-        break;
-      case 'hardLight':
-        result = l < 0.5 ? 2 * b * l : 1 - 2 * (1 - b) * (1 - l);
-        break;
-      case 'softLight':
-        if (l < 0.5) {
-          result = b - (1 - 2 * l) * b * (1 - b);
-        } else {
-          const d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : Math.sqrt(b);
-          result = b + (2 * l - 1) * (d - b);
-        }
-        break;
-      case 'difference':
-        result = Math.abs(b - l);
-        break;
-      case 'exclusion':
-        result = b + l - 2 * b * l;
-        break;
-      case 'normal':
-      default:
-        result = l;
-        break;
-    }
-
-    return Math.round(result * 255);
-  };
-
   return [
-    blend(baseR, blendR),
-    blend(baseG, blendG),
-    blend(baseB, blendB),
+    blendChannel(baseR, blendR, mode),
+    blendChannel(baseG, blendG, mode),
+    blendChannel(baseB, blendB, mode),
   ];
 }
 
@@ -271,34 +259,18 @@ export const BlendNode = defineNode({
       }
     }
 
-    // CPU fallback - need ImageData
-    let baseImage: ImageData;
-    let blendImage: ImageData;
-    let maskImage: ImageData | null = null;
+    // CPU fallback - need FloatImage
+    const baseImage = ensureFloatImage(baseInput, context);
+    const blendImage = ensureFloatImage(blendInput, context);
+    const maskImage = maskInput ? ensureFloatImage(maskInput, context) : null;
 
-    if (isGPUTexture(baseInput)) {
-      baseImage = context.gpu!.downloadTexture(baseInput);
-    } else {
-      baseImage = baseInput;
-    }
-
-    if (isGPUTexture(blendInput)) {
-      blendImage = context.gpu!.downloadTexture(blendInput);
-    } else {
-      blendImage = blendInput;
-    }
-
-    if (maskInput) {
-      if (isGPUTexture(maskInput)) {
-        maskImage = context.gpu!.downloadTexture(maskInput);
-      } else {
-        maskImage = maskInput;
-      }
+    if (!baseImage || !blendImage) {
+      return { image: null };
     }
 
     // Use base dimensions as output
     const { width, height } = baseImage;
-    const outputImage = new ImageData(width, height);
+    const outputImage = createFloatImage(width, height);
     const baseData = baseImage.data;
     const blendData = blendImage.data;
     const maskData = maskImage?.data;
@@ -313,7 +285,7 @@ export const BlendNode = defineNode({
       for (let x = 0; x < width; x++) {
         const baseIdx = (y * width + x) * 4;
 
-        // Get base pixel
+        // Get base pixel (already 0.0-1.0)
         const baseR = baseData[baseIdx];
         const baseG = baseData[baseIdx + 1];
         const baseB = baseData[baseIdx + 2];
@@ -332,18 +304,18 @@ export const BlendNode = defineNode({
         const blendR = blendData[blendIdx];
         const blendG = blendData[blendIdx + 1];
         const blendB = blendData[blendIdx + 2];
-        let blendA = blendData[blendIdx + 3] / 255;
+        let blendA = blendData[blendIdx + 3];
 
         // Apply mask if present
         if (maskData && x < maskW && y < maskH) {
           const maskIdx = (y * maskW + x) * 4;
-          blendA *= maskData[maskIdx] / 255;
+          blendA *= maskData[maskIdx];
         }
 
         // Apply opacity
         blendA *= opacity;
 
-        // Blend colors
+        // Blend colors (already in 0.0-1.0)
         const [resultR, resultG, resultB] = blendPixel(
           baseR, baseG, baseB,
           blendR, blendG, blendB,
@@ -351,10 +323,10 @@ export const BlendNode = defineNode({
         );
 
         // Mix based on alpha
-        outData[baseIdx] = Math.round(baseR * (1 - blendA) + resultR * blendA);
-        outData[baseIdx + 1] = Math.round(baseG * (1 - blendA) + resultG * blendA);
-        outData[baseIdx + 2] = Math.round(baseB * (1 - blendA) + resultB * blendA);
-        outData[baseIdx + 3] = Math.round(Math.min(255, baseA + blendA * 255 * (1 - baseA / 255)));
+        outData[baseIdx] = baseR * (1 - blendA) + resultR * blendA;
+        outData[baseIdx + 1] = baseG * (1 - blendA) + resultG * blendA;
+        outData[baseIdx + 2] = baseB * (1 - blendA) + resultB * blendA;
+        outData[baseIdx + 3] = Math.min(1, baseA + blendA * (1 - baseA));
       }
     }
 

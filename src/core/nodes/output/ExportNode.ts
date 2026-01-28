@@ -1,6 +1,5 @@
-import { defineNode } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
-import type { GPUTexture } from '../../../types/gpu';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { floatToImageData } from '../../../types/data';
 
 export const ExportNode = defineNode({
   type: 'output/export',
@@ -57,7 +56,7 @@ export const ExportNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const input = inputs.image as ImageData | GPUTexture | null;
+    const input = inputs.image;
     const filename = params.filename as string;
     const format = params.format as 'png' | 'jpeg' | 'webp';
     const quality = (params.quality as number) / 100;
@@ -67,16 +66,12 @@ export const ExportNode = defineNode({
       return {};
     }
 
-    // Download from GPU if needed
-    let image: ImageData;
-    if (isGPUTexture(input)) {
-      if (!context.gpu) {
-        throw new Error('GPU context required to download texture');
-      }
-      image = context.gpu.downloadTexture(input);
-    } else {
-      image = input;
+    // Convert to FloatImage first, then to ImageData for canvas
+    const floatImage = ensureFloatImage(input, context);
+    if (!floatImage) {
+      return {};
     }
+    const image = floatToImageData(floatImage);
 
     // Create canvas and draw image
     const canvas = new OffscreenCanvas(image.width, image.height);

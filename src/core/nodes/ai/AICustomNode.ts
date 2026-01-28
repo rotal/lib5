@@ -1,4 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { floatToImageData } from '../../../types/data';
 
 export const AICustomNode = defineNode({
   type: 'ai/custom',
@@ -122,8 +123,12 @@ export const AICustomNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = ensureImageData(inputs.image, context);
-    const inputMask = ensureImageData(inputs.mask, context);
+    const inputFloatImage = ensureFloatImage(inputs.image, context);
+    const inputFloatMask = ensureFloatImage(inputs.mask, context);
+
+    // Convert to ImageData for base64 encoding
+    const inputImage = inputFloatImage ? floatToImageData(inputFloatImage) : null;
+    const inputMask = inputFloatMask ? floatToImageData(inputFloatMask) : null;
 
     const endpoint = params.endpoint as string;
     const method = params.method as string;

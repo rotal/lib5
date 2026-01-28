@@ -1,5 +1,5 @@
-import { defineNode } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, FloatImage, createFloatImage } from '../../../types/data';
 import type { GPUContext, GPUTexture } from '../../../types/gpu';
 import type { ExecutionContext } from '../../../types/node';
 
@@ -136,15 +136,15 @@ function executeGPU(
  * CPU convolution implementation (fallback)
  */
 function executeCPU(
-  inputImage: ImageData,
+  inputImage: FloatImage,
   kernel: number[][],
   strength: number,
   context: ExecutionContext
-): ImageData {
+): FloatImage {
   const kernelHeight = kernel.length;
   const kernelWidth = kernel[0]?.length || 0;
   const { width, height, data: srcData } = inputImage;
-  const outputImage = new ImageData(width, height);
+  const outputImage = createFloatImage(width, height);
   const dstData = outputImage.data;
 
   const halfKH = Math.floor(kernelHeight / 2);
@@ -170,16 +170,16 @@ function executeCPU(
       const dstIdx = (y * width + x) * 4;
       const origIdx = (y * width + x) * 4;
 
-      // Blend with original based on strength
-      dstData[dstIdx] = Math.max(0, Math.min(255, Math.round(
+      // Blend with original based on strength (values in 0.0-1.0)
+      dstData[dstIdx] = Math.max(0, Math.min(1,
         srcData[origIdx] * (1 - strength) + r * strength
-      )));
-      dstData[dstIdx + 1] = Math.max(0, Math.min(255, Math.round(
+      ));
+      dstData[dstIdx + 1] = Math.max(0, Math.min(1,
         srcData[origIdx + 1] * (1 - strength) + g * strength
-      )));
-      dstData[dstIdx + 2] = Math.max(0, Math.min(255, Math.round(
+      ));
+      dstData[dstIdx + 2] = Math.max(0, Math.min(1,
         srcData[origIdx + 2] * (1 - strength) + b * strength
-      )));
+      ));
       dstData[dstIdx + 3] = srcData[origIdx + 3];
     }
 
@@ -313,11 +313,9 @@ export const ConvolutionNode = defineNode({
     }
 
     // CPU fallback
-    let inputImage: ImageData;
-    if (isGPUTexture(input)) {
-      inputImage = context.gpu!.downloadTexture(input);
-    } else {
-      inputImage = input;
+    const inputImage = ensureFloatImage(input, context);
+    if (!inputImage) {
+      return { image: null };
     }
 
     const result = executeCPU(inputImage, kernel, strength, context);

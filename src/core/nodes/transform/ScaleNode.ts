@@ -1,5 +1,5 @@
-import { defineNode } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, FloatImage, createFloatImage } from '../../../types/data';
 import type { GPUContext, GPUTexture } from '../../../types/gpu';
 
 // Interpolation method to shader constant mapping
@@ -95,16 +95,16 @@ function executeGPU(
  * CPU scale implementation (fallback)
  */
 function executeCPU(
-  inputImage: ImageData,
+  inputImage: FloatImage,
   dstW: number,
   dstH: number,
   interpolation: string
-): ImageData {
+): FloatImage {
   const srcW = inputImage.width;
   const srcH = inputImage.height;
   const srcData = inputImage.data;
 
-  const outputImage = new ImageData(dstW, dstH);
+  const outputImage = createFloatImage(dstW, dstH);
   const dstData = outputImage.data;
 
   const scaleX = srcW / dstW;
@@ -145,7 +145,7 @@ function executeCPU(
 
           const v0 = v00 * (1 - fx) + v10 * fx;
           const v1 = v01 * (1 - fx) + v11 * fx;
-          dstData[dstIdx + c] = Math.round(v0 * (1 - fy) + v1 * fy);
+          dstData[dstIdx + c] = v0 * (1 - fy) + v1 * fy;
         }
       } else {
         // Bicubic interpolation
@@ -169,7 +169,7 @@ function executeCPU(
             }
           }
 
-          dstData[dstIdx + c] = Math.round(Math.max(0, Math.min(255, value)));
+          dstData[dstIdx + c] = Math.max(0, Math.min(1, value));
         }
       }
     }
@@ -331,11 +331,9 @@ export const ScaleNode = defineNode({
     }
 
     // CPU fallback
-    let inputImage: ImageData;
-    if (isGPUTexture(input)) {
-      inputImage = context.gpu!.downloadTexture(input);
-    } else {
-      inputImage = input;
+    const inputImage = ensureFloatImage(input, context);
+    if (!inputImage) {
+      return { image: null };
     }
 
     const result = executeCPU(inputImage, dstW, dstH, interpolation);

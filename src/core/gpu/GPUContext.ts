@@ -1,5 +1,6 @@
 import * as twgl from 'twgl.js';
 import type { GPUContext, GPUTexture, GPUContextConfig } from '../../types/gpu';
+import type { FloatImage } from '../../types/data';
 import { TexturePool } from './TexturePool';
 import { ShaderRegistry } from './ShaderRegistry';
 
@@ -86,10 +87,17 @@ export class GPUContextImpl implements GPUContext {
   }
 
   /**
-   * Create a texture from ImageData
+   * Create a texture from ImageData (legacy, for loading)
    */
   createTexture(source: ImageData): GPUTexture {
     return this.texturePool.createFromImageData(source);
+  }
+
+  /**
+   * Create a texture from FloatImage
+   */
+  createTextureFromFloat(source: FloatImage): GPUTexture {
+    return this.texturePool.createFromFloatImage(source);
   }
 
   /**
@@ -163,10 +171,17 @@ export class GPUContextImpl implements GPUContext {
   }
 
   /**
-   * Download texture from GPU to CPU
+   * Download texture from GPU to CPU as FloatImage (0.0-1.0)
    */
-  downloadTexture(texture: GPUTexture): ImageData {
+  downloadTexture(texture: GPUTexture): FloatImage {
     return this.texturePool.download(texture);
+  }
+
+  /**
+   * Download texture from GPU to CPU as ImageData (for display)
+   */
+  downloadTextureAsImageData(texture: GPUTexture): ImageData {
+    return this.texturePool.downloadAsImageData(texture);
   }
 
   /**

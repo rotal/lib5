@@ -29,21 +29,90 @@ export interface Rect {
   height: number;
 }
 
+/**
+ * Color with floating point channels (0.0-1.0 range)
+ */
 export interface Color {
-  r: number; // 0-255
-  g: number;
-  b: number;
-  a: number; // 0-1
+  r: number; // 0.0-1.0
+  g: number; // 0.0-1.0
+  b: number; // 0.0-1.0
+  a: number; // 0.0-1.0
+}
+
+/**
+ * Float image data with 32-bit float channels (0.0-1.0 range)
+ * Supports HDR and high precision color processing
+ */
+export interface FloatImage {
+  /** RGBA pixel data as Float32Array (r,g,b,a,r,g,b,a,...) in 0.0-1.0 range */
+  data: Float32Array;
+  /** Image width in pixels */
+  width: number;
+  /** Image height in pixels */
+  height: number;
+}
+
+/**
+ * Create a new FloatImage with specified dimensions
+ */
+export function createFloatImage(width: number, height: number): FloatImage {
+  return {
+    data: new Float32Array(width * height * 4),
+    width,
+    height,
+  };
+}
+
+/**
+ * Convert ImageData (0-255) to FloatImage (0.0-1.0)
+ */
+export function imageDataToFloat(imageData: ImageData): FloatImage {
+  const { width, height, data } = imageData;
+  const floatData = new Float32Array(width * height * 4);
+  const scale = 1 / 255;
+
+  for (let i = 0; i < data.length; i++) {
+    floatData[i] = data[i] * scale;
+  }
+
+  return { data: floatData, width, height };
+}
+
+/**
+ * Convert FloatImage (0.0-1.0) to ImageData (0-255)
+ */
+export function floatToImageData(floatImage: FloatImage): ImageData {
+  const { width, height, data } = floatImage;
+  const imageData = new ImageData(width, height);
+  const outData = imageData.data;
+
+  for (let i = 0; i < data.length; i++) {
+    // Clamp to 0-1 range and convert to 0-255
+    outData[i] = Math.round(Math.max(0, Math.min(1, data[i])) * 255);
+  }
+
+  return imageData;
+}
+
+/**
+ * Clone a FloatImage
+ */
+export function cloneFloatImage(source: FloatImage): FloatImage {
+  return {
+    data: new Float32Array(source.data),
+    width: source.width,
+    height: source.height,
+  };
 }
 
 export interface Selection {
-  mask: ImageData;
+  mask: FloatImage;
   bounds: Rect;
   feather: number;
 }
 
 export interface VideoFrame {
-  image: ImageData;
+  image: FloatImage;
   timestamp: number;
   duration: number;
   frameIndex: number;
@@ -53,6 +122,7 @@ export interface VideoFrame {
  * Runtime values that nodes pass to each other
  */
 export type PortValue =
+  | FloatImage
   | ImageData
   | ImageBitmap
   | GPUTexture
@@ -71,8 +141,8 @@ export type PortValue =
  * Mapping of data types to their TypeScript types
  */
 export interface DataTypeMap {
-  image: ImageData | ImageBitmap | GPUTexture;
-  mask: ImageData;
+  image: FloatImage | ImageData | ImageBitmap | GPUTexture;
+  mask: FloatImage;
   number: number;
   color: Color;
   boolean: boolean;
@@ -87,6 +157,17 @@ export interface DataTypeMap {
 /**
  * Type guard functions
  */
+export function isFloatImage(value: unknown): value is FloatImage {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'data' in value &&
+    'width' in value &&
+    'height' in value &&
+    (value as FloatImage).data instanceof Float32Array
+  );
+}
+
 export function isImageData(value: unknown): value is ImageData {
   return value instanceof ImageData;
 }

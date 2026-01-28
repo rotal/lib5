@@ -1,4 +1,5 @@
 import type { GPUTexture } from '../../types/gpu';
+import type { FloatImage } from '../../types/data';
 
 /**
  * Reference-counted texture pool for GPU memory management.
@@ -94,6 +95,24 @@ export class TexturePool {
 
     this.textures.set(id, gpuTexture);
     return gpuTexture;
+  }
+
+  /**
+   * Create a new texture from FloatImage (0.0-1.0 range)
+   */
+  createFromFloatImage(source: FloatImage): GPUTexture {
+    const { width, height, data } = source;
+
+    // Convert FloatImage to ImageData for GPU upload
+    const imageData = new ImageData(width, height);
+    const outData = imageData.data;
+
+    for (let i = 0; i < data.length; i++) {
+      // Clamp to 0-1 and convert to 0-255
+      outData[i] = Math.round(Math.max(0, Math.min(1, data[i])) * 255);
+    }
+
+    return this.createFromImageData(imageData);
   }
 
   /**
@@ -205,7 +224,7 @@ export class TexturePool {
   }
 
   /**
-   * Download texture data to CPU
+   * Download texture data to CPU as FloatImage (0.0-1.0 range)
    *
    * With UNPACK_FLIP_Y_WEBGL=true on upload:
    * - Texture v=0 = bottom of original, v=1 = top of original
@@ -213,10 +232,41 @@ export class TexturePool {
    * - Framebuffer top samples v=1 = top of original
    * - readPixels row 0 = framebuffer bottom = original bottom
    * - readPixels row N = framebuffer top = original top
-   * - ImageData row 0 should be top, row N should be bottom
-   * So we need to flip: ImageData row 0 gets readPixels row N, etc.
+   * - Output row 0 should be top, row N should be bottom
+   * So we need to flip: output row 0 gets readPixels row N, etc.
    */
-  download(texture: GPUTexture): ImageData {
+  download(texture: GPUTexture): FloatImage {
+    const gl = this.gl;
+    const { width, height, framebuffer } = texture;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+
+    const pixels = new Uint8Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    // Convert to FloatImage with vertical flip
+    const floatData = new Float32Array(width * height * 4);
+    const scale = 1 / 255;
+    const rowSize = width * 4;
+
+    for (let y = 0; y < height; y++) {
+      const srcOffset = (height - 1 - y) * rowSize;
+      const dstOffset = y * rowSize;
+      for (let x = 0; x < rowSize; x++) {
+        floatData[dstOffset + x] = pixels[srcOffset + x] * scale;
+      }
+    }
+
+    return { data: floatData, width, height };
+  }
+
+  /**
+   * Download texture data to CPU as ImageData (0-255 range)
+   * Used for canvas display
+   */
+  downloadAsImageData(texture: GPUTexture): ImageData {
     const gl = this.gl;
     const { width, height, framebuffer } = texture;
 
@@ -227,7 +277,7 @@ export class TexturePool {
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
-    // Flip vertically to convert from framebuffer coordinates to ImageData coordinates
+    // Flip vertically
     const flipped = new Uint8ClampedArray(width * height * 4);
     const rowSize = width * 4;
     for (let y = 0; y < height; y++) {
