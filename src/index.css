@@ -1,0 +1,290 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-editor-bg: #1a1a2e;
+  --color-editor-surface: #252542;
+  --color-editor-surface-light: #2d2d4a;
+  --color-editor-border: #3d3d5c;
+  --color-editor-text: #e0e0e0;
+  --color-editor-text-dim: #808090;
+  --color-editor-accent: #6366f1;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: var(--color-editor-bg);
+  color: var(--color-editor-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Prevent text selection during drag operations */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-editor-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-editor-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4d4d6c;
+}
+
+/* Graph canvas background pattern */
+.graph-background {
+  background-color: var(--color-editor-bg);
+  background-image:
+    radial-gradient(circle, var(--color-editor-border) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Node styles */
+.graph-node {
+  position: absolute;
+  background: var(--color-editor-surface);
+  border: 1px solid var(--color-editor-border);
+  border-radius: 8px;
+  min-width: 180px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: box-shadow 0.15s ease;
+}
+
+.graph-node:hover {
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
+
+.graph-node.selected {
+  border-color: var(--color-editor-accent);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+}
+
+.graph-node.executing {
+  border-color: #f59e0b;
+}
+
+.graph-node.error {
+  border-color: #ef4444;
+}
+
+/* Port styles */
+.node-port {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--color-editor-border);
+  background: var(--color-editor-surface);
+  cursor: crosshair;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+  position: relative;
+  z-index: 10;
+}
+
+.node-port:hover {
+  transform: scale(1.3);
+  border-color: var(--color-editor-accent);
+  background: var(--color-editor-accent);
+}
+
+.node-port.connected {
+  background: var(--color-editor-accent);
+}
+
+/* Edge styles */
+.graph-edge {
+  fill: none;
+  stroke: var(--color-editor-border);
+  stroke-width: 2;
+  pointer-events: stroke;
+}
+
+.graph-edge:hover {
+  stroke: var(--color-editor-accent);
+  stroke-width: 3;
+}
+
+.graph-edge.selected {
+  stroke: var(--color-editor-accent);
+}
+
+.graph-edge.dragging {
+  stroke: var(--color-editor-accent);
+  stroke-dasharray: 8 4;
+  animation: dash-flow 0.5s linear infinite;
+}
+
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+/* Panel styles */
+.panel {
+  background: var(--color-editor-surface);
+  border-right: 1px solid var(--color-editor-border);
+}
+
+.panel-right {
+  border-right: none;
+  border-left: 1px solid var(--color-editor-border);
+}
+
+/* Touch-friendly styles */
+@media (pointer: coarse) {
+  .node-port {
+    width: 20px;
+    height: 20px;
+  }
+
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Mobile bottom sheet */
+.bottom-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--color-editor-surface);
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.3);
+  transform: translateY(100%);
+  transition: transform 0.3s ease;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.bottom-sheet.open {
+  transform: translateY(0);
+}
+
+.bottom-sheet-handle {
+  width: 40px;
+  height: 4px;
+  background: var(--color-editor-border);
+  border-radius: 2px;
+  margin: 12px auto;
+}
+
+/* Slider styles */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--color-editor-surface-light);
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  background: var(--color-editor-accent);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: var(--color-editor-accent);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+/* Button styles */
+.btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background: var(--color-editor-accent);
+  color: white;
+  border: none;
+}
+
+.btn-primary:hover {
+  background: #818cf8;
+}
+
+.btn-secondary {
+  background: var(--color-editor-surface-light);
+  color: var(--color-editor-text);
+  border: 1px solid var(--color-editor-border);
+}
+
+.btn-secondary:hover {
+  background: var(--color-editor-border);
+}
+
+/* Input styles */
+.input {
+  background: var(--color-editor-surface-light);
+  border: 1px solid var(--color-editor-border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--color-editor-text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.input:focus {
+  border-color: var(--color-editor-accent);
+}
+
+/* Tooltip */
+.tooltip {
+  position: absolute;
+  background: #000;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 1000;
+}
