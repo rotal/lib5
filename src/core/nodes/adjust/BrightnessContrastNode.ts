@@ -1,5 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, isFloatImage, createFloatImage } from '../../../types/data';
 import type { GPUTexture } from '../../../types/gpu';
 
 export const BrightnessContrastNode = defineNode({
@@ -71,8 +71,11 @@ export const BrightnessContrastNode = defineNode({
 
       if (isGPUTexture(input)) {
         inputTexture = input;
+      } else if (isFloatImage(input)) {
+        inputTexture = gpu.createTextureFromFloat(input);
+        needsInputRelease = true;
       } else {
-        inputTexture = gpu.createTexture(input);
+        inputTexture = gpu.createTexture(input as ImageData);
         needsInputRelease = true;
       }
 
@@ -104,27 +107,25 @@ export const BrightnessContrastNode = defineNode({
     }
 
     // CPU fallback
-    const inputImage = ensureImageData(input, context);
+    const inputImage = ensureFloatImage(input, context);
     if (!inputImage) {
       return { image: null };
     }
 
-    const outputImage = new ImageData(
-      new Uint8ClampedArray(inputImage.data),
-      inputImage.width,
-      inputImage.height
-    );
+    const { width, height, data: srcData } = inputImage;
+    const outputImage = createFloatImage(width, height);
     const data = outputImage.data;
 
     const contrastFactor = contrast >= 0 ? 1 + contrast * 2 : 1 + contrast;
 
-    for (let i = 0; i < data.length; i += 4) {
+    for (let i = 0; i < srcData.length; i += 4) {
       for (let c = 0; c < 3; c++) {
-        let value = data[i + c];
-        value += brightness * 255;
-        value = (value - 128) * contrastFactor + 128;
-        data[i + c] = value;
+        let value = srcData[i + c];
+        value += brightness;
+        value = (value - 0.5) * contrastFactor + 0.5;
+        data[i + c] = Math.max(0, Math.min(1, value));
       }
+      data[i + 3] = srcData[i + 3]; // preserve alpha
     }
 
     return { image: outputImage };

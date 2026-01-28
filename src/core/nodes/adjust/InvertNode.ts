@@ -1,5 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, isFloatImage, createFloatImage } from '../../../types/data';
 import type { GPUTexture } from '../../../types/gpu';
 
 export const InvertNode = defineNode({
@@ -62,8 +62,11 @@ export const InvertNode = defineNode({
 
       if (isGPUTexture(input)) {
         inputTexture = input;
+      } else if (isFloatImage(input)) {
+        inputTexture = gpu.createTextureFromFloat(input);
+        needsInputRelease = true;
       } else {
-        inputTexture = gpu.createTexture(input);
+        inputTexture = gpu.createTexture(input as ImageData);
         needsInputRelease = true;
       }
 
@@ -89,25 +92,24 @@ export const InvertNode = defineNode({
     }
 
     // CPU fallback
-    const inputImage = ensureImageData(input, context);
+    const inputImage = ensureFloatImage(input, context);
     if (!inputImage) {
       return { image: null };
     }
 
-    const outputImage = new ImageData(
-      new Uint8ClampedArray(inputImage.data),
-      inputImage.width,
-      inputImage.height
-    );
+    const { width, height, data: srcData } = inputImage;
+    const outputImage = createFloatImage(width, height);
     const data = outputImage.data;
 
-    for (let i = 0; i < data.length; i += 4) {
-      data[i] = 255 - data[i];
-      data[i + 1] = 255 - data[i + 1];
-      data[i + 2] = 255 - data[i + 2];
+    for (let i = 0; i < srcData.length; i += 4) {
+      data[i] = 1.0 - srcData[i];
+      data[i + 1] = 1.0 - srcData[i + 1];
+      data[i + 2] = 1.0 - srcData[i + 2];
 
       if (invertAlpha) {
-        data[i + 3] = 255 - data[i + 3];
+        data[i + 3] = 1.0 - srcData[i + 3];
+      } else {
+        data[i + 3] = srcData[i + 3];
       }
     }
 

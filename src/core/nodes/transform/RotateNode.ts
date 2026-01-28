@@ -1,4 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { createFloatImage } from '../../../types/data';
 
 export const RotateNode = defineNode({
   type: 'transform/rotate',
@@ -59,7 +60,7 @@ export const RotateNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = ensureImageData(inputs.image, context);
+    const inputImage = ensureFloatImage(inputs.image, context);
 
     if (!inputImage) {
       return { image: null };
@@ -85,7 +86,7 @@ export const RotateNode = defineNode({
       dstH = srcH;
     }
 
-    const outputImage = new ImageData(dstW, dstH);
+    const outputImage = createFloatImage(dstW, dstH);
     const srcData = inputImage.data;
     const dstData = outputImage.data;
 
@@ -106,11 +107,11 @@ export const RotateNode = defineNode({
         const dstIdx = (y * dstW + x) * 4;
 
         if (srcX < 0 || srcX >= srcW || srcY < 0 || srcY >= srcH) {
-          // Outside source bounds - use background color
+          // Outside source bounds - use background color (already 0.0-1.0)
           dstData[dstIdx] = bg.r;
           dstData[dstIdx + 1] = bg.g;
           dstData[dstIdx + 2] = bg.b;
-          dstData[dstIdx + 3] = Math.round(bg.a * 255);
+          dstData[dstIdx + 3] = bg.a;
           continue;
         }
 
@@ -146,7 +147,7 @@ export const RotateNode = defineNode({
 
             const v0 = v00 * (1 - fx) + v10 * fx;
             const v1 = v01 * (1 - fx) + v11 * fx;
-            dstData[dstIdx + c] = Math.round(v0 * (1 - fy) + v1 * fy);
+            dstData[dstIdx + c] = v0 * (1 - fy) + v1 * fy;
           }
         }
       }

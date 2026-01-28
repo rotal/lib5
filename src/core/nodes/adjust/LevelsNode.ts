@@ -1,5 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, isFloatImage, createFloatImage } from '../../../types/data';
 import type { GPUTexture } from '../../../types/gpu';
 
 export const LevelsNode = defineNode({
@@ -99,8 +99,11 @@ export const LevelsNode = defineNode({
 
       if (isGPUTexture(input)) {
         inputTexture = input;
+      } else if (isFloatImage(input)) {
+        inputTexture = gpu.createTextureFromFloat(input);
+        needsInputRelease = true;
       } else {
-        inputTexture = gpu.createTexture(input);
+        inputTexture = gpu.createTexture(input as ImageData);
         needsInputRelease = true;
       }
 
@@ -130,35 +133,28 @@ export const LevelsNode = defineNode({
     }
 
     // CPU fallback
-    const inputImage = ensureImageData(input, context);
+    const inputImage = ensureFloatImage(input, context);
     if (!inputImage) {
       return { image: null };
     }
 
-    const outputImage = new ImageData(
-      new Uint8ClampedArray(inputImage.data),
-      inputImage.width,
-      inputImage.height
-    );
+    const { width, height, data: srcData } = inputImage;
+    const outputImage = createFloatImage(width, height);
     const data = outputImage.data;
 
-    // Precompute lookup table for performance
-    const lut = new Uint8Array(256);
-    const inputRange = (inputWhite - inputBlack) * 255 || 1;
-    const outputRange = (outputWhite - outputBlack) * 255;
+    const inputRange = inputWhite - inputBlack || 0.001;
+    const outputRange = outputWhite - outputBlack;
+    const invGamma = 1 / gamma;
 
-    for (let i = 0; i < 256; i++) {
-      let value = (i - inputBlack * 255) / inputRange;
-      value = Math.max(0, Math.min(1, value));
-      value = Math.pow(value, 1 / gamma);
-      value = value * outputRange + outputBlack * 255;
-      lut[i] = Math.round(Math.max(0, Math.min(255, value)));
-    }
-
-    for (let i = 0; i < data.length; i += 4) {
-      data[i] = lut[data[i]];
-      data[i + 1] = lut[data[i + 1]];
-      data[i + 2] = lut[data[i + 2]];
+    for (let i = 0; i < srcData.length; i += 4) {
+      for (let c = 0; c < 3; c++) {
+        let value = (srcData[i + c] - inputBlack) / inputRange;
+        value = Math.max(0, Math.min(1, value));
+        value = Math.pow(value, invGamma);
+        value = value * outputRange + outputBlack;
+        data[i + c] = Math.max(0, Math.min(1, value));
+      }
+      data[i + 3] = srcData[i + 3]; // preserve alpha
     }
 
     return { image: outputImage };

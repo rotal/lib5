@@ -1,5 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, isFloatImage, createFloatImage } from '../../../types/data';
 import type { GPUTexture } from '../../../types/gpu';
 
 export const ThresholdNode = defineNode({
@@ -107,8 +107,11 @@ export const ThresholdNode = defineNode({
 
       if (isGPUTexture(input)) {
         inputTexture = input;
+      } else if (isFloatImage(input)) {
+        inputTexture = gpu.createTextureFromFloat(input);
+        needsInputRelease = true;
       } else {
-        inputTexture = gpu.createTexture(input);
+        inputTexture = gpu.createTexture(input as ImageData);
         needsInputRelease = true;
       }
 
@@ -138,20 +141,20 @@ export const ThresholdNode = defineNode({
     }
 
     // CPU fallback
-    const inputImage = ensureImageData(input, context);
+    const inputImage = ensureFloatImage(input, context);
     if (!inputImage) {
       return { mask: null, image: null };
     }
 
     const { width, height, data: srcData } = inputImage;
-    const maskImage = new ImageData(width, height);
-    const outputImage = new ImageData(width, height);
+    const maskImage = createFloatImage(width, height);
+    const outputImage = createFloatImage(width, height);
     const maskData = maskImage.data;
     const outData = outputImage.data;
 
-    const lowThreshold = Math.max(0, (params.threshold as number) - (params.softness as number));
-    const highThreshold = Math.min(255, (params.threshold as number) + (params.softness as number));
-    const range = highThreshold - lowThreshold || 1;
+    const lowThreshold = Math.max(0, threshold - softness);
+    const highThreshold = Math.min(1, threshold + softness);
+    const range = highThreshold - lowThreshold || 0.001;
 
     for (let i = 0; i < srcData.length; i += 4) {
       let value: number;
@@ -176,26 +179,26 @@ export const ThresholdNode = defineNode({
       }
 
       let maskValue: number;
-      if ((params.softness as number) === 0) {
-        maskValue = value >= (params.threshold as number) ? 255 : 0;
+      if (softness === 0) {
+        maskValue = value >= threshold ? 1.0 : 0.0;
       } else {
         if (value <= lowThreshold) {
           maskValue = 0;
         } else if (value >= highThreshold) {
-          maskValue = 255;
+          maskValue = 1;
         } else {
-          maskValue = Math.round(((value - lowThreshold) / range) * 255);
+          maskValue = (value - lowThreshold) / range;
         }
       }
 
       if (invert) {
-        maskValue = 255 - maskValue;
+        maskValue = 1.0 - maskValue;
       }
 
       maskData[i] = maskValue;
       maskData[i + 1] = maskValue;
       maskData[i + 2] = maskValue;
-      maskData[i + 3] = 255;
+      maskData[i + 3] = 1.0;
 
       outData[i] = maskValue;
       outData[i + 1] = maskValue;

@@ -1,4 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { createFloatImage } from '../../../types/data';
 
 export const MergeChannelsNode = defineNode({
   type: 'utility/merge-channels',
@@ -74,15 +75,16 @@ export const MergeChannelsNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const redImage = ensureImageData(inputs.red, context);
-    const greenImage = ensureImageData(inputs.green, context);
-    const blueImage = ensureImageData(inputs.blue, context);
-    const alphaImage = ensureImageData(inputs.alpha, context);
+    const redImage = ensureFloatImage(inputs.red, context);
+    const greenImage = ensureFloatImage(inputs.green, context);
+    const blueImage = ensureFloatImage(inputs.blue, context);
+    const alphaImage = ensureFloatImage(inputs.alpha, context);
 
-    const defaultRed = params.defaultRed as number;
-    const defaultGreen = params.defaultGreen as number;
-    const defaultBlue = params.defaultBlue as number;
-    const defaultAlpha = params.defaultAlpha as number;
+    // Convert 0-255 defaults to 0.0-1.0
+    const defaultRed = (params.defaultRed as number) / 255;
+    const defaultGreen = (params.defaultGreen as number) / 255;
+    const defaultBlue = (params.defaultBlue as number) / 255;
+    const defaultAlpha = (params.defaultAlpha as number) / 255;
 
     // Determine output dimensions from first available input
     const referenceImage = redImage || greenImage || blueImage || alphaImage;
@@ -91,7 +93,7 @@ export const MergeChannelsNode = defineNode({
     }
 
     const { width, height } = referenceImage;
-    const outputImage = new ImageData(width, height);
+    const outputImage = createFloatImage(width, height);
     const outData = outputImage.data;
 
     const redData = redImage?.data;

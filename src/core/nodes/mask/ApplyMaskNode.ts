@@ -1,4 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { createFloatImage, cloneFloatImage } from '../../../types/data';
 
 export const ApplyMaskNode = defineNode({
   type: 'mask/apply',
@@ -52,28 +53,22 @@ export const ApplyMaskNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = ensureImageData(inputs.image, context);
-    const maskImage = ensureImageData(inputs.mask, context);
+    const inputImage = ensureFloatImage(inputs.image, context);
+    const maskImage = ensureFloatImage(inputs.mask, context);
 
     if (!inputImage) {
       return { image: null };
     }
 
     if (!maskImage) {
-      return {
-        image: new ImageData(
-          new Uint8ClampedArray(inputImage.data),
-          inputImage.width,
-          inputImage.height
-        ),
-      };
+      return { image: cloneFloatImage(inputImage) };
     }
 
     const mode = params.mode as string;
     const invert = params.invert as boolean;
 
     const { width, height } = inputImage;
-    const outputImage = new ImageData(width, height);
+    const outputImage = createFloatImage(width, height);
     const srcData = inputImage.data;
     const maskData = maskImage.data;
     const outData = outputImage.data;
@@ -100,7 +95,7 @@ export const ApplyMaskNode = defineNode({
         }
 
         if (invert) {
-          maskValue = 255 - maskValue;
+          maskValue = 1.0 - maskValue;
         }
 
         // Apply mask to alpha
@@ -112,10 +107,10 @@ export const ApplyMaskNode = defineNode({
             newAlpha = maskValue;
             break;
           case 'multiply':
-            newAlpha = Math.round((srcAlpha * maskValue) / 255);
+            newAlpha = srcAlpha * maskValue;
             break;
           case 'add':
-            newAlpha = Math.min(255, srcAlpha + maskValue);
+            newAlpha = Math.min(1, srcAlpha + maskValue);
             break;
           case 'subtract':
             newAlpha = Math.max(0, srcAlpha - maskValue);

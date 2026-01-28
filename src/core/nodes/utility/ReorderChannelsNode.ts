@@ -1,5 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, isFloatImage, createFloatImage } from '../../../types/data';
 import type { GPUTexture } from '../../../types/gpu';
 
 export const ReorderChannelsNode = defineNode({
@@ -130,8 +130,11 @@ export const ReorderChannelsNode = defineNode({
 
       if (isGPUTexture(input)) {
         inputTexture = input;
+      } else if (isFloatImage(input)) {
+        inputTexture = gpu.createTextureFromFloat(input);
+        needsInputRelease = true;
       } else {
-        inputTexture = gpu.createTexture(input);
+        inputTexture = gpu.createTexture(input as ImageData);
         needsInputRelease = true;
       }
 
@@ -162,12 +165,12 @@ export const ReorderChannelsNode = defineNode({
     }
 
     // CPU fallback
-    const image = ensureImageData(input, context);
+    const image = ensureFloatImage(input, context);
     if (!image) {
       return { image: null };
     }
 
-    const result = new ImageData(image.width, image.height);
+    const result = createFloatImage(image.width, image.height);
     const src = image.data;
     const dst = result.data;
 
@@ -178,7 +181,7 @@ export const ReorderChannelsNode = defineNode({
         case 'blue': return src[i + 2];
         case 'alpha': return src[i + 3];
         case 'zero': return 0;
-        case 'one': return 255;
+        case 'one': return 1;
         default: return 0;
       }
     };

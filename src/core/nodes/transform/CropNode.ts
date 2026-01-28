@@ -1,4 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { createFloatImage } from '../../../types/data';
 
 export const CropNode = defineNode({
   type: 'transform/crop',
@@ -90,7 +91,7 @@ export const CropNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = ensureImageData(inputs.image, context);
+    const inputImage = ensureFloatImage(inputs.image, context);
 
     if (!inputImage) {
       return { image: null };
@@ -142,7 +143,7 @@ export const CropNode = defineNode({
     cropWidth = Math.max(1, Math.min(srcW - x, cropWidth));
     cropHeight = Math.max(1, Math.min(srcH - y, cropHeight));
 
-    const outputImage = new ImageData(cropWidth, cropHeight);
+    const outputImage = createFloatImage(cropWidth, cropHeight);
     const srcData = inputImage.data;
     const dstData = outputImage.data;
 

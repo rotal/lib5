@@ -1,5 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, isFloatImage, createFloatImage } from '../../../types/data';
 import type { GPUTexture } from '../../../types/gpu';
 
 export const SplitChannelsNode = defineNode({
@@ -69,8 +69,11 @@ export const SplitChannelsNode = defineNode({
 
       if (isGPUTexture(input)) {
         inputTexture = input;
+      } else if (isFloatImage(input)) {
+        inputTexture = gpu.createTextureFromFloat(input);
+        needsInputRelease = true;
       } else {
-        inputTexture = gpu.createTexture(input);
+        inputTexture = gpu.createTexture(input as ImageData);
         needsInputRelease = true;
       }
 
@@ -133,17 +136,17 @@ export const SplitChannelsNode = defineNode({
     }
 
     // CPU fallback
-    const inputImage = ensureImageData(input, context);
+    const inputImage = ensureFloatImage(input, context);
     if (!inputImage) {
       return { red: null, green: null, blue: null, alpha: null };
     }
 
     const { width, height, data: srcData } = inputImage;
 
-    const redImage = new ImageData(width, height);
-    const greenImage = new ImageData(width, height);
-    const blueImage = new ImageData(width, height);
-    const alphaImage = new ImageData(width, height);
+    const redImage = createFloatImage(width, height);
+    const greenImage = createFloatImage(width, height);
+    const blueImage = createFloatImage(width, height);
+    const alphaImage = createFloatImage(width, height);
 
     const redData = redImage.data;
     const greenData = greenImage.data;
@@ -156,25 +159,26 @@ export const SplitChannelsNode = defineNode({
       const b = srcData[i + 2];
       const a = srcData[i + 3];
 
+      // Output grayscale channel values with full opacity
       redData[i] = r;
       redData[i + 1] = r;
       redData[i + 2] = r;
-      redData[i + 3] = 255;
+      redData[i + 3] = 1.0;
 
       greenData[i] = g;
       greenData[i + 1] = g;
       greenData[i + 2] = g;
-      greenData[i + 3] = 255;
+      greenData[i + 3] = 1.0;
 
       blueData[i] = b;
       blueData[i + 1] = b;
       blueData[i + 2] = b;
-      blueData[i + 3] = 255;
+      blueData[i + 3] = 1.0;
 
       alphaData[i] = a;
       alphaData[i + 1] = a;
       alphaData[i + 2] = a;
-      alphaData[i + 3] = 255;
+      alphaData[i + 3] = 1.0;
     }
 
     return {

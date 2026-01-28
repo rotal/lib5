@@ -1,4 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { createFloatImage } from '../../../types/data';
 
 export const SharpenNode = defineNode({
   type: 'filter/sharpen',
@@ -52,7 +53,7 @@ export const SharpenNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputImage = ensureImageData(inputs.image, context);
+    const inputImage = ensureFloatImage(inputs.image, context);
 
     if (!inputImage) {
       return { image: null };
@@ -60,15 +61,11 @@ export const SharpenNode = defineNode({
 
     const amount = (params.amount as number) / 100;
     const radius = params.radius as number;
-    const threshold = params.threshold as number;
+    const threshold = (params.threshold as number) / 255; // Convert to 0-1 range
 
     if (amount === 0) {
       return {
-        image: new ImageData(
-          new Uint8ClampedArray(inputImage.data),
-          inputImage.width,
-          inputImage.height
-        ),
+        image: createFloatImage(inputImage.width, inputImage.height),
       };
     }
 
@@ -130,7 +127,7 @@ export const SharpenNode = defineNode({
     }
 
     // Apply unsharp mask: output = original + amount * (original - blurred)
-    const outputImage = new ImageData(width, height);
+    const outputImage = createFloatImage(width, height);
     const dstData = outputImage.data;
 
     for (let i = 0; i < srcData.length; i += 4) {
@@ -140,7 +137,7 @@ export const SharpenNode = defineNode({
         const diff = original - blurred;
 
         if (Math.abs(diff) >= threshold) {
-          dstData[i + c] = Math.max(0, Math.min(255, Math.round(original + amount * diff)));
+          dstData[i + c] = Math.max(0, Math.min(1, original + amount * diff));
         } else {
           dstData[i + c] = original;
         }

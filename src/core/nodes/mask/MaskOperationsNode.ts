@@ -1,4 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { createFloatImage, cloneFloatImage } from '../../../types/data';
 
 export const MaskOperationsNode = defineNode({
   type: 'mask/operations',
@@ -49,7 +50,7 @@ export const MaskOperationsNode = defineNode({
   ],
 
   async execute(inputs, params, context) {
-    const inputMask = ensureImageData(inputs.mask, context);
+    const inputMask = ensureFloatImage(inputs.mask, context);
 
     if (!inputMask) {
       return { mask: null };
@@ -61,24 +62,18 @@ export const MaskOperationsNode = defineNode({
     const { width, height, data: srcData } = inputMask;
 
     if (operation === 'none') {
-      return {
-        mask: new ImageData(
-          new Uint8ClampedArray(srcData),
-          width,
-          height
-        ),
-      };
+      return { mask: cloneFloatImage(inputMask) };
     }
 
     if (operation === 'invert') {
-      const outputMask = new ImageData(width, height);
+      const outputMask = createFloatImage(width, height);
       const outData = outputMask.data;
 
       for (let i = 0; i < srcData.length; i += 4) {
-        outData[i] = 255 - srcData[i];
-        outData[i + 1] = 255 - srcData[i + 1];
-        outData[i + 2] = 255 - srcData[i + 2];
-        outData[i + 3] = 255;
+        outData[i] = 1.0 - srcData[i];
+        outData[i + 1] = 1.0 - srcData[i + 1];
+        outData[i + 2] = 1.0 - srcData[i + 2];
+        outData[i + 3] = 1.0;
       }
 
       return { mask: outputMask };
@@ -86,7 +81,7 @@ export const MaskOperationsNode = defineNode({
 
     if (operation === 'feather') {
       // Gaussian blur for feathering
-      const outputMask = new ImageData(width, height);
+      const outputMask = createFloatImage(width, height);
       const outData = outputMask.data;
       const radius = Math.round(amount);
       const sigma = radius / 3;
@@ -128,11 +123,10 @@ export const MaskOperationsNode = defineNode({
             value += tempData[sy * width + x] * kernel[k + radius];
           }
           const dstIdx = (y * width + x) * 4;
-          const v = Math.round(value);
-          outData[dstIdx] = v;
-          outData[dstIdx + 1] = v;
-          outData[dstIdx + 2] = v;
-          outData[dstIdx + 3] = 255;
+          outData[dstIdx] = value;
+          outData[dstIdx + 1] = value;
+          outData[dstIdx + 2] = value;
+          outData[dstIdx + 3] = 1.0;
         }
       }
 
@@ -141,14 +135,14 @@ export const MaskOperationsNode = defineNode({
 
     if (operation === 'expand' || operation === 'contract') {
       // Morphological operation (dilation/erosion)
-      const outputMask = new ImageData(width, height);
+      const outputMask = createFloatImage(width, height);
       const outData = outputMask.data;
       const radius = Math.round(amount);
       const isExpand = operation === 'expand';
 
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-          let extremeValue = isExpand ? 0 : 255;
+          let extremeValue = isExpand ? 0 : 1;
 
           for (let dy = -radius; dy <= radius; dy++) {
             for (let dx = -radius; dx <= radius; dx++) {
@@ -172,7 +166,7 @@ export const MaskOperationsNode = defineNode({
           outData[dstIdx] = extremeValue;
           outData[dstIdx + 1] = extremeValue;
           outData[dstIdx + 2] = extremeValue;
-          outData[dstIdx + 3] = 255;
+          outData[dstIdx + 3] = 1.0;
         }
 
         if (y % 20 === 0) {
@@ -184,6 +178,6 @@ export const MaskOperationsNode = defineNode({
       return { mask: outputMask };
     }
 
-    return { mask: inputMask };
+    return { mask: cloneFloatImage(inputMask) };
   },
 });

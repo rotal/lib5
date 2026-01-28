@@ -1,5 +1,5 @@
-import { defineNode, ensureImageData } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, isFloatImage, createFloatImage, cloneFloatImage } from '../../../types/data';
 import type { GPUTexture } from '../../../types/gpu';
 
 export const FlipNode = defineNode({
@@ -70,8 +70,11 @@ export const FlipNode = defineNode({
 
       if (isGPUTexture(input)) {
         inputTexture = input;
+      } else if (isFloatImage(input)) {
+        inputTexture = gpu.createTextureFromFloat(input);
+        needsInputRelease = true;
       } else {
-        inputTexture = gpu.createTexture(input);
+        inputTexture = gpu.createTexture(input as ImageData);
         needsInputRelease = true;
       }
 
@@ -125,24 +128,18 @@ export const FlipNode = defineNode({
     }
 
     // CPU fallback
-    const inputImage = ensureImageData(input, context);
+    const inputImage = ensureFloatImage(input, context);
     if (!inputImage) {
       return { image: null };
     }
 
     if (!horizontal && !vertical) {
-      return {
-        image: new ImageData(
-          new Uint8ClampedArray(inputImage.data),
-          inputImage.width,
-          inputImage.height
-        ),
-      };
+      return { image: cloneFloatImage(inputImage) };
     }
 
     const { width, height } = inputImage;
     const srcData = inputImage.data;
-    const outputImage = new ImageData(width, height);
+    const outputImage = createFloatImage(width, height);
     const dstData = outputImage.data;
 
     for (let y = 0; y < height; y++) {

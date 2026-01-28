@@ -1,13 +1,9 @@
-import { defineNode, ensureImageData } from '../defineNode';
-import { isGPUTexture } from '../../../types/data';
+import { defineNode, ensureFloatImage } from '../defineNode';
+import { isGPUTexture, isFloatImage, createFloatImage } from '../../../types/data';
 import type { GPUTexture } from '../../../types/gpu';
 
-// Convert RGB to HSL
+// Convert RGB (0-1) to HSL
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
-  r /= 255;
-  g /= 255;
-  b /= 255;
-
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   let h = 0;
@@ -34,7 +30,7 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   return [h, s, l];
 }
 
-// Convert HSL to RGB
+// Convert HSL to RGB (0-1)
 function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   let r: number, g: number, b: number;
 
@@ -57,7 +53,7 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
     b = hue2rgb(p, q, h - 1 / 3);
   }
 
-  return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+  return [r, g, b];
 }
 
 export const HueSaturationNode = defineNode({
@@ -137,8 +133,11 @@ export const HueSaturationNode = defineNode({
 
       if (isGPUTexture(input)) {
         inputTexture = input;
+      } else if (isFloatImage(input)) {
+        inputTexture = gpu.createTextureFromFloat(input);
+        needsInputRelease = true;
       } else {
-        inputTexture = gpu.createTexture(input);
+        inputTexture = gpu.createTexture(input as ImageData);
         needsInputRelease = true;
       }
 
@@ -166,22 +165,19 @@ export const HueSaturationNode = defineNode({
     }
 
     // CPU fallback
-    const inputImage = ensureImageData(input, context);
+    const inputImage = ensureFloatImage(input, context);
     if (!inputImage) {
       return { image: null };
     }
 
-    const outputImage = new ImageData(
-      new Uint8ClampedArray(inputImage.data),
-      inputImage.width,
-      inputImage.height
-    );
+    const { width, height, data: srcData } = inputImage;
+    const outputImage = createFloatImage(width, height);
     const data = outputImage.data;
 
-    for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
+    for (let i = 0; i < srcData.length; i += 4) {
+      const r = srcData[i];
+      const g = srcData[i + 1];
+      const b = srcData[i + 2];
 
       let [h, s, l] = rgbToHsl(r, g, b);
 
@@ -205,6 +201,7 @@ export const HueSaturationNode = defineNode({
       data[i] = newR;
       data[i + 1] = newG;
       data[i + 2] = newB;
+      data[i + 3] = srcData[i + 3]; // preserve alpha
     }
 
     return { image: outputImage };
