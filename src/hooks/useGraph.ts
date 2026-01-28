@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useGraphStore, useExecutionStore, useHistoryStore, useUiStore } from '../store';
 import { getDownstreamNodes } from '../core/graph/TopologicalSort';
-import { NodeRegistry } from '../core/graph/NodeRegistry';
 
 /**
  * Hook for graph manipulation with history tracking
@@ -106,7 +105,6 @@ export function useGraph() {
   }, [graphStore, historyStore, executionStore]);
 
   // Update node parameter (called during drag)
-  // For heavy compute nodes, skip execution during drag (only on release)
   const updateNodeParameter = useCallback((
     nodeId: string,
     paramId: string,
@@ -121,13 +119,8 @@ export function useGraph() {
     const dirtyNodes = [nodeId, ...getDownstreamNodes(freshGraph, nodeId)];
     executionStore.markNodesDirty(Array.from(dirtyNodes));
 
-    // Check if this node or any downstream node is heavy compute
-    const node = freshGraph.nodes[nodeId];
-    const nodeDef = node ? NodeRegistry.get(node.type) : undefined;
-    const isHeavy = nodeDef?.heavyCompute ?? false;
-
-    // In live mode, execute immediately unless it's a heavy compute node
-    if (uiStore.liveEdit && !isHeavy && !executionStore.isExecuting) {
+    // In live mode, execute immediately on parameter change
+    if (uiStore.liveEdit && !executionStore.isExecuting) {
       executionStore.updateEngineGraph(freshGraph);
       executionStore.execute();
     }
