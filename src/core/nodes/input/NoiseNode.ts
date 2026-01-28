@@ -68,6 +68,7 @@ export const NoiseNode = defineNode({
   name: 'Noise',
   description: 'Generate procedural noise pattern',
   icon: 'grain',
+  heavyCompute: true,
 
   inputs: [],
 

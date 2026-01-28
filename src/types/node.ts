@@ -120,6 +120,8 @@ export interface NodeDefinition {
   outputs: PortDefinition[];
   parameters: ParameterDefinition[];
   execute: NodeExecuteFunction;
+  /** If true, node only executes on slider release, not during drag (for CPU-intensive nodes) */
+  heavyCompute?: boolean;
 }
 
 /**
