@@ -1,7 +1,7 @@
 import { NodeRegistry } from '../graph/NodeRegistry';
 
 // Input nodes
-import { ImageInputNode, ColorInputNode, NoiseNode } from './input';
+import { ImageInputNode, ColorInputNode, NoiseNode, RampNode } from './input';
 
 // Output nodes
 import { ExportNode } from './output';
@@ -35,6 +35,7 @@ export function registerAllNodes(): void {
   NodeRegistry.register(ImageInputNode);
   NodeRegistry.register(ColorInputNode);
   NodeRegistry.register(NoiseNode);
+  NodeRegistry.register(RampNode);
 
   // Output
   NodeRegistry.register(ExportNode);
@@ -84,6 +85,7 @@ export {
   ImageInputNode,
   ColorInputNode,
   NoiseNode,
+  RampNode,
   // Output
   ExportNode,
   // Adjust
