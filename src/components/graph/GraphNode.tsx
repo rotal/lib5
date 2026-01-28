@@ -4,6 +4,7 @@ import { NodeRegistry } from '../../core/graph/NodeRegistry';
 import { GraphPort } from './GraphPort';
 import { Edge } from '../../types/graph';
 import { PortValue, isImageData, isImageBitmap } from '../../types/data';
+import { useUiStore } from '../../store';
 
 interface GraphNodeProps {
   node: NodeInstance;
@@ -59,15 +60,22 @@ export function GraphNode({
   const dragStart = useRef({ x: 0, y: 0, nodeX: 0, nodeY: 0 });
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const [hasPreview, setHasPreview] = useState(false);
+  const { setPreviewNode } = useUiStore();
 
   const categoryColor = CATEGORY_COLORS[definition?.category || 'Utility'];
 
-  // Check if this node has a preview parameter
-  const hasPreviewParam = useMemo(() => {
-    return definition?.parameters?.some(p => p.id === 'preview' && p.type === 'boolean') ?? false;
+  // Handle double-click to preview node output
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPreviewNode(node.id);
+  }, [node.id, setPreviewNode]);
+
+  // Check if this node has image/mask outputs (can show preview)
+  const hasImageOutput = useMemo(() => {
+    return definition?.outputs?.some(o => o.dataType === 'image' || o.dataType === 'mask') ?? false;
   }, [definition]);
 
-  const previewEnabled = hasPreviewParam ? (node.parameters.preview as boolean) ?? false : false;
+  const previewEnabled = (node.parameters.preview as boolean) ?? false;
 
   // Handle preview toggle click
   const handlePreviewToggle = useCallback((e: React.MouseEvent) => {
@@ -234,14 +242,20 @@ export function GraphNode({
   if (!definition) {
     return (
       <div
-        className="graph-node error"
+        className={`graph-node error ${isSelected ? 'selected' : ''}`}
         style={{
           left: node.position.x,
           top: node.position.y,
+          position: 'absolute',
         }}
+        onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClick}
       >
-        <div className="p-2 text-editor-error text-xs">
-          Unknown node type: {node.type}
+        <div className="px-3 py-2 rounded-t-lg border-b border-editor-border bg-editor-error/20">
+          <span className="text-sm font-medium text-editor-error">Unknown Node</span>
+        </div>
+        <div className="p-2 text-editor-text-dim text-xs">
+          Type: {node.type}
         </div>
       </div>
     );
@@ -264,6 +278,7 @@ export function GraphNode({
         top: node.position.y,
         position: 'absolute',
       }}
+      onDoubleClick={handleDoubleClick}
       onMouseDown={handleMouseDown}
     >
       {/* Input ports - LEFT side */}
@@ -326,8 +341,8 @@ export function GraphNode({
         <span className="text-sm font-medium text-editor-text truncate flex-1">
           {definition.name}
         </span>
-        {/* Preview toggle - eye icon */}
-        {hasPreviewParam && (
+        {/* Preview toggle - eye icon (for nodes with image/mask outputs) */}
+        {hasImageOutput && (
           <button
             className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors ${
               previewEnabled
@@ -391,8 +406,8 @@ export function GraphNode({
         </div>
       </div>
 
-      {/* Preview thumbnail */}
-      {(previewImage || hasPreview) && (
+      {/* Preview thumbnail - only show when preview is enabled */}
+      {previewEnabled && (previewImage || hasPreview) && (
         <div className="px-2 pb-2 flex justify-center">
           <canvas
             ref={previewCanvasRef}

@@ -1,47 +1,36 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { useExecutionStore, useGraphStore, useUiStore } from '../../store';
+import { useExecutionStore, useUiStore } from '../../store';
 
 export function PreviewViewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { nodeOutputs, isExecuting } = useExecutionStore();
-  const { graph } = useGraphStore();
   const { previewNodeId } = useUiStore();
 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [imageInfo, setImageInfo] = useState<{ width: number; height: number } | null>(null);
 
-  // Find preview nodes or use specified node
+  // Find preview node (set by double-clicking on node preview)
   const previewNodes = React.useMemo(() => {
-    const nodes: string[] = [];
-
     if (previewNodeId && nodeOutputs[previewNodeId]) {
-      nodes.push(previewNodeId);
-    } else {
-      // Find all Preview nodes
-      for (const [nodeId, node] of Object.entries(graph.nodes)) {
-        if (node.type === 'output/preview') {
-          nodes.push(nodeId);
-        }
-      }
+      return [previewNodeId];
     }
+    return [];
+  }, [previewNodeId, nodeOutputs]);
 
-    return nodes;
-  }, [previewNodeId, graph.nodes, nodeOutputs]);
-
-  // Get image to display
+  // Get image to display - find first ImageData in any output
   const imageData = React.useMemo(() => {
-    console.log('PreviewViewport - previewNodes:', previewNodes);
-    console.log('PreviewViewport - nodeOutputs:', nodeOutputs);
-
     for (const nodeId of previewNodes) {
       const outputs = nodeOutputs[nodeId];
-      console.log('PreviewViewport - checking node:', nodeId, 'outputs:', outputs);
-      if (outputs?.image instanceof ImageData) {
-        console.log('PreviewViewport - found ImageData:', outputs.image.width, 'x', outputs.image.height);
-        return outputs.image;
+      if (!outputs) continue;
+
+      // Check all outputs for ImageData
+      for (const value of Object.values(outputs)) {
+        if (value instanceof ImageData) {
+          return value;
+        }
       }
     }
     return null;
@@ -215,15 +204,10 @@ export function PreviewViewport() {
       </div>
 
       {/* Status bar */}
-      <div className="px-3 py-1 border-t border-editor-border bg-editor-surface text-xs text-editor-text-dim flex items-center justify-between">
+      <div className="px-3 py-1 border-t border-editor-border bg-editor-surface text-xs text-editor-text-dim">
         <span>
           {imageInfo ? `${imageInfo.width} x ${imageInfo.height}` : 'No image'}
         </span>
-        {previewNodes.length > 0 && (
-          <span>
-            Preview: {graph.nodes[previewNodes[0]]?.type.split('/')[1] || 'Unknown'}
-          </span>
-        )}
       </div>
     </div>
   );

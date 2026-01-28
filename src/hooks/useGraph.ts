@@ -122,14 +122,15 @@ export function useGraph() {
   }, [graphStore, executionStore, uiStore.liveEdit]);
 
   // Save parameter change to history (debounced, called on mouse up)
-  // Also triggers auto-execute if live edit is enabled
+  // Also triggers auto-execute if live edit is enabled or for preview toggle
   const commitParameterChange = useCallback((_nodeId: string, paramId: string) => {
     // Get fresh graph state
     const freshGraph = useGraphStore.getState().graph;
     historyStore.saveState(freshGraph, `Change ${paramId}`);
 
-    // Auto-execute if live edit is enabled
-    if (uiStore.liveEdit && !executionStore.isExecuting) {
+    // Always execute for preview toggle, or if live edit is enabled
+    const shouldExecute = paramId === 'preview' || uiStore.liveEdit;
+    if (shouldExecute && !executionStore.isExecuting) {
       // Ensure engine has the latest graph before executing
       executionStore.updateEngineGraph(freshGraph);
       executionStore.execute();

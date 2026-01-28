@@ -279,8 +279,24 @@ export class GraphEngine {
 
       // Execute node
       const startTime = performance.now();
-      const outputs = await definition.execute(inputs, node.parameters, context);
+      let outputs = await definition.execute(inputs, node.parameters, context);
       const executionTime = performance.now() - startTime;
+
+      // If preview is enabled, convert GPU textures to ImageData for display
+      if (node.parameters.preview && this.gpuContext) {
+        const previewOutputs: Record<string, PortValue> = {};
+        for (const [key, value] of Object.entries(outputs)) {
+          if (isGPUTexture(value)) {
+            // Download texture to ImageData for preview
+            previewOutputs[key] = this.gpuContext.downloadTexture(value);
+            // Release the GPU texture since we've downloaded it
+            this.gpuContext.releaseTexture(value.id);
+          } else {
+            previewOutputs[key] = value;
+          }
+        }
+        outputs = previewOutputs;
+      }
 
       // Cache outputs
       this.outputCache.set(nodeId, outputs);

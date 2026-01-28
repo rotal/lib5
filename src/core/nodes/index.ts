@@ -4,7 +4,7 @@ import { NodeRegistry } from '../graph/NodeRegistry';
 import { ImageInputNode, ColorInputNode, NoiseNode } from './input';
 
 // Output nodes
-import { PreviewNode, ExportNode } from './output';
+import { ExportNode } from './output';
 
 // Adjust nodes
 import { BrightnessContrastNode, HueSaturationNode, LevelsNode, InvertNode } from './adjust';
@@ -37,7 +37,6 @@ export function registerAllNodes(): void {
   NodeRegistry.register(NoiseNode);
 
   // Output
-  NodeRegistry.register(PreviewNode);
   NodeRegistry.register(ExportNode);
 
   // Adjust
@@ -85,7 +84,6 @@ export {
   ColorInputNode,
   NoiseNode,
   // Output
-  PreviewNode,
   ExportNode,
   // Adjust
   BrightnessContrastNode,
