@@ -104,7 +104,7 @@ export function useGraph() {
     }
   }, [graphStore, historyStore, executionStore]);
 
-  // Update node parameter with history
+  // Update node parameter (called during drag - no execution, only on release)
   const updateNodeParameter = useCallback((
     nodeId: string,
     paramId: string,
@@ -119,12 +119,9 @@ export function useGraph() {
     const dirtyNodes = [nodeId, ...getDownstreamNodes(freshGraph, nodeId)];
     executionStore.markNodesDirty(Array.from(dirtyNodes));
 
-    // In live mode, execute immediately on parameter change
-    if (uiStore.liveEdit && !executionStore.isExecuting) {
-      executionStore.updateEngineGraph(freshGraph);
-      executionStore.execute();
-    }
-  }, [graphStore, executionStore, uiStore.liveEdit]);
+    // Don't execute here - wait for commitParameterChange (on mouse up)
+    // This keeps the slider responsive for CPU-intensive nodes like Noise
+  }, [graphStore, executionStore]);
 
   // Save parameter change to history (debounced, called on mouse up)
   // Also triggers auto-execute if live edit is enabled or for preview toggle
