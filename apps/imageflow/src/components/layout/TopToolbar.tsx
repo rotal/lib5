@@ -80,7 +80,7 @@ export function TopToolbar() {
 
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [canvasLocked, setCanvasLocked] = useState(true);
+  const [canvasLocked, setCanvasLocked] = useState(false); // Lock aspect ratio
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
 
@@ -538,48 +538,61 @@ export function TopToolbar() {
           />
 
           {/* Canvas size */}
-          <div className={`flex items-center gap-1 px-2 py-1 border rounded-lg text-xs ${
-            canvasLocked
-              ? 'bg-editor-surface-light/30 border-editor-border text-editor-text-dim'
-              : 'bg-editor-surface-light/50 border-editor-border text-editor-text-secondary'
-          }`}>
+          <div className="flex items-center gap-1 px-2 py-1 bg-editor-surface-light/50 border border-editor-border rounded-lg text-xs text-editor-text-secondary">
+            <input
+              type="number"
+              value={graph.canvas?.width ?? 1920}
+              onChange={(e) => {
+                const newWidth = parseInt(e.target.value) || 1920;
+                const currentWidth = graph.canvas?.width ?? 1920;
+                const currentHeight = graph.canvas?.height ?? 1080;
+                if (canvasLocked && currentWidth > 0) {
+                  const ratio = currentHeight / currentWidth;
+                  setCanvas(newWidth, Math.round(newWidth * ratio));
+                } else {
+                  setCanvas(newWidth, currentHeight);
+                }
+              }}
+              className="w-12 bg-transparent text-center focus:outline-none focus:text-editor-text"
+              min={1}
+              max={8192}
+            />
             <button
               onClick={() => setCanvasLocked(!canvasLocked)}
               className={`p-0.5 rounded transition-colors ${
                 canvasLocked
-                  ? 'text-editor-text-dim hover:text-editor-text'
-                  : 'text-editor-accent'
+                  ? 'text-editor-accent'
+                  : 'text-editor-text-dim hover:text-editor-text'
               }`}
-              title={canvasLocked ? 'Unlock canvas size' : 'Lock canvas size'}
+              title={canvasLocked ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
             >
               {canvasLocked ? (
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                 </svg>
               ) : (
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
                 </svg>
               )}
             </button>
             <input
               type="number"
-              value={graph.canvas?.width ?? 1920}
-              onChange={(e) => setCanvas(parseInt(e.target.value) || 1920, graph.canvas?.height ?? 1080)}
-              className="w-12 bg-transparent text-center focus:outline-none focus:text-editor-text disabled:cursor-not-allowed"
-              min={1}
-              max={8192}
-              disabled={canvasLocked}
-            />
-            <span className="opacity-40">×</span>
-            <input
-              type="number"
               value={graph.canvas?.height ?? 1080}
-              onChange={(e) => setCanvas(graph.canvas?.width ?? 1920, parseInt(e.target.value) || 1080)}
-              className="w-12 bg-transparent text-center focus:outline-none focus:text-editor-text disabled:cursor-not-allowed"
+              onChange={(e) => {
+                const newHeight = parseInt(e.target.value) || 1080;
+                const currentWidth = graph.canvas?.width ?? 1920;
+                const currentHeight = graph.canvas?.height ?? 1080;
+                if (canvasLocked && currentHeight > 0) {
+                  const ratio = currentWidth / currentHeight;
+                  setCanvas(Math.round(newHeight * ratio), newHeight);
+                } else {
+                  setCanvas(currentWidth, newHeight);
+                }
+              }}
+              className="w-12 bg-transparent text-center focus:outline-none focus:text-editor-text"
               min={1}
               max={8192}
-              disabled={canvasLocked}
             />
           </div>
 
