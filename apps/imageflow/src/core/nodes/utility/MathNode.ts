@@ -41,14 +41,12 @@ export const MathNode = defineNode({
       name: 'A',
       dataType: 'any',
       required: false,
-      defaultValue: 0,
     },
     {
       id: 'b',
       name: 'B',
       dataType: 'any',
       required: false,
-      defaultValue: 0,
     },
   ],
 

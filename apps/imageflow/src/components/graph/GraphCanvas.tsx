@@ -23,6 +23,14 @@ interface SearchPopupState {
   pendingConnection?: PendingConnection;
 }
 
+interface MarqueeState {
+  active: boolean;
+  startX: number;
+  startY: number;
+  currentX: number;
+  currentY: number;
+}
+
 export function GraphCanvas() {
   const {
     containerRef,
@@ -40,6 +48,7 @@ export function GraphCanvas() {
     nodeStates,
     nodeOutputs,
     selectNode,
+    selectNodes,
     selectEdge,
     clearSelection,
     moveNode,
@@ -52,7 +61,7 @@ export function GraphCanvas() {
     cancelConnectionDrag,
   } = useGraph();
 
-  const { showContextMenu, setPreviewSlot } = useUiStore();
+  const { showContextMenu, setPreviewSlot, clearPreviewSlot, previewSlots } = useUiStore();
 
   const [portPositions, setPortPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
   const edgesRef = useRef<SVGSVGElement>(null);
@@ -63,6 +72,14 @@ export function GraphCanvas() {
     worldX: 0,
     worldY: 0,
   });
+  const [marquee, setMarquee] = useState<MarqueeState>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0,
+  });
+  const justFinishedMarquee = useRef(false);
   const lastMousePos = useRef({ x: 0, y: 0 });
 
   // Update port positions when nodes change
@@ -97,12 +114,106 @@ export function GraphCanvas() {
     return () => clearTimeout(timer);
   }, [graph.nodes, graph.edges, viewport, containerRef]);
 
-  // Handle canvas click (deselect)
+  // Handle canvas click (deselect) - only if not ending a marquee
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+    if (marquee.active || justFinishedMarquee.current) {
+      justFinishedMarquee.current = false;
+      return; // Don't clear selection if we were doing marquee
+    }
     if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains('graph-background')) {
       clearSelection();
     }
-  }, [clearSelection]);
+  }, [clearSelection, marquee.active]);
+
+  // Handle canvas mouse down for marquee selection
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+    // Only start marquee on left click on empty canvas
+    if (e.button !== 0) return;
+    if (e.target !== e.currentTarget && !(e.target as HTMLElement).classList.contains('graph-background')) return;
+
+    e.preventDefault();
+    setMarquee({
+      active: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY,
+    });
+  }, []);
+
+  // Marquee selection mouse tracking
+  useEffect(() => {
+    if (!marquee.active) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      setMarquee(prev => ({
+        ...prev,
+        currentX: e.clientX,
+        currentY: e.clientY,
+      }));
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      // Calculate selection rect in world coordinates
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) {
+        setMarquee(prev => ({ ...prev, active: false }));
+        return;
+      }
+
+      const minScreenX = Math.min(marquee.startX, e.clientX);
+      const maxScreenX = Math.max(marquee.startX, e.clientX);
+      const minScreenY = Math.min(marquee.startY, e.clientY);
+      const maxScreenY = Math.max(marquee.startY, e.clientY);
+
+      // Only select if dragged more than 5 pixels (to distinguish from click)
+      if (maxScreenX - minScreenX > 5 || maxScreenY - minScreenY > 5) {
+        // Convert screen rect to world coordinates
+        const topLeft = screenToWorld(minScreenX, minScreenY);
+        const bottomRight = screenToWorld(maxScreenX, maxScreenY);
+
+        // Find nodes that intersect with the selection rect
+        const selectedIds: string[] = [];
+        const NODE_WIDTH = 180;
+        const NODE_HEIGHT = 100;
+
+        for (const node of Object.values(graph.nodes)) {
+          const nodeLeft = node.position.x;
+          const nodeTop = node.position.y;
+          const nodeRight = nodeLeft + NODE_WIDTH;
+          const nodeBottom = nodeTop + NODE_HEIGHT;
+
+          // Check if node intersects with selection rect
+          if (
+            nodeRight >= topLeft.x &&
+            nodeLeft <= bottomRight.x &&
+            nodeBottom >= topLeft.y &&
+            nodeTop <= bottomRight.y
+          ) {
+            selectedIds.push(node.id);
+          }
+        }
+
+        if (selectedIds.length > 0) {
+          selectNodes(selectedIds, e.shiftKey);
+          justFinishedMarquee.current = true;
+        }
+      } else {
+        // Small drag, treat as potential click - set flag to prevent immediate clear
+        justFinishedMarquee.current = true;
+      }
+
+      setMarquee(prev => ({ ...prev, active: false }));
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [marquee.active, marquee.startX, marquee.startY, screenToWorld, graph.nodes, selectNodes, containerRef]);
 
   // Handle canvas context menu
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -311,20 +422,25 @@ export function GraphCanvas() {
         });
       }
 
-      // 1/2/3 keys assign selected node to preview slot
+      // 1/2/3 keys assign selected node to preview slot (toggle off if already assigned)
       if ((e.key === '1' || e.key === '2' || e.key === '3') && !e.ctrlKey && !e.altKey && !e.metaKey) {
         // Only if a single node is selected
         if (selectedNodeIds.size === 1) {
           const nodeId = Array.from(selectedNodeIds)[0];
           const slotIndex = (parseInt(e.key) - 1) as 0 | 1 | 2;
-          setPreviewSlot(slotIndex, nodeId);
+          // Toggle off if node is already in this slot
+          if (previewSlots[slotIndex] === nodeId) {
+            clearPreviewSlot(slotIndex);
+          } else {
+            setPreviewSlot(slotIndex, nodeId);
+          }
         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [screenToWorld, selectedNodeIds, setPreviewSlot]);
+  }, [screenToWorld, selectedNodeIds, setPreviewSlot, clearPreviewSlot, previewSlots]);
 
   // Handle node selection from search popup
   const handleNodeSelect = useCallback((nodeType: string) => {
@@ -372,7 +488,11 @@ export function GraphCanvas() {
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       {...handlers}
-      style={{ cursor: isPanning ? 'grabbing' : 'default' }}
+      onMouseDown={(e) => {
+        handlers.onMouseDown(e);
+        handleCanvasMouseDown(e);
+      }}
+      style={{ cursor: isPanning ? 'grabbing' : marquee.active ? 'crosshair' : 'default' }}
     >
       {/* Transform container */}
       <div
@@ -437,6 +557,19 @@ export function GraphCanvas() {
           />
         ))}
       </div>
+
+      {/* Marquee selection rectangle */}
+      {marquee.active && (
+        <div
+          className="absolute border-2 border-blue-500 bg-blue-500/10 pointer-events-none"
+          style={{
+            left: Math.min(marquee.startX, marquee.currentX) - (containerRef.current?.getBoundingClientRect().left || 0),
+            top: Math.min(marquee.startY, marquee.currentY) - (containerRef.current?.getBoundingClientRect().top || 0),
+            width: Math.abs(marquee.currentX - marquee.startX),
+            height: Math.abs(marquee.currentY - marquee.startY),
+          }}
+        />
+      )}
 
       {/* Zoom indicator */}
       <div className="absolute bottom-4 right-4 px-2 py-1 bg-editor-surface/80 rounded text-xs text-editor-text-dim">

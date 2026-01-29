@@ -57,7 +57,10 @@ export function GraphNode({
   const definition = NodeRegistry.get(node.type);
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, nodeX: 0, nodeY: 0 });
+  const dragStartPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
   const { previewSlots, previewBackgroundActive, previewForegroundSlot } = useUiStore();
+  const selectedNodeIds = useGraphStore((s) => s.selectedNodeIds);
+  const graph = useGraphStore((s) => s.graph);
   const { downloadGPUTexture } = useExecutionStore();
   const setNodeLocalPreview = useGraphStore((s) => s.setNodeLocalPreview);
   const localPreview = !!node.localPreview;
@@ -199,7 +202,24 @@ export function GraphNode({
       nodeY: node.position.y,
     };
 
-    onSelect(node.id, e.shiftKey || e.ctrlKey || e.metaKey);
+    // If node is already selected, don't change selection (allows multi-drag)
+    // Only change selection if node is not selected or using modifier keys
+    if (!isSelected) {
+      onSelect(node.id, e.shiftKey || e.ctrlKey || e.metaKey);
+    }
+
+    // Capture initial positions of all selected nodes for multi-drag
+    // Need to get fresh state after potential selection change
+    const currentSelectedIds = useGraphStore.getState().selectedNodeIds;
+    const currentGraph = useGraphStore.getState().graph;
+    dragStartPositions.current.clear();
+    const nodesToMove = currentSelectedIds.has(node.id) ? currentSelectedIds : new Set([node.id]);
+    for (const id of nodesToMove) {
+      const n = currentGraph.nodes[id];
+      if (n) {
+        dragStartPositions.current.set(id, { x: n.position.x, y: n.position.y });
+      }
+    }
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (!isDragging.current) return;
@@ -207,11 +227,10 @@ export function GraphNode({
       const dx = (moveEvent.clientX - dragStart.current.x) / zoom;
       const dy = (moveEvent.clientY - dragStart.current.y) / zoom;
 
-      onMove(
-        node.id,
-        dragStart.current.nodeX + dx,
-        dragStart.current.nodeY + dy
-      );
+      // Move all selected nodes by the same delta
+      for (const [id, startPos] of dragStartPositions.current) {
+        onMove(id, startPos.x + dx, startPos.y + dy);
+      }
     };
 
     const handleMouseUp = () => {
@@ -225,7 +244,7 @@ export function GraphNode({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [node.id, node.position, zoom, onSelect, onMove, onMoveEnd]);
+  }, [node.id, node.position, zoom, onSelect, onMove, onMoveEnd, isSelected, selectedNodeIds, graph.nodes]);
 
   if (!definition) {
     return (
