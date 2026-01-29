@@ -62,7 +62,7 @@ export function TopToolbar() {
     isExecuting,
   } = useGraph();
 
-  const { newGraph, loadGraph, setGraphName } = useGraphStore();
+  const { newGraph, loadGraph, setGraphName, setCanvas } = useGraphStore();
   const {
     isMobile,
     setViewMode,
@@ -535,6 +535,30 @@ export function TopToolbar() {
             className="px-3 py-1.5 bg-editor-surface-light/50 border border-editor-border rounded-lg text-sm text-editor-text text-center focus:outline-none focus:border-editor-accent focus:ring-2 focus:ring-editor-accent/20 transition-all w-[180px]"
             placeholder="Project name"
           />
+
+          {/* Canvas size */}
+          <div className="flex items-center gap-1 px-2 py-1 bg-editor-surface-light/50 border border-editor-border rounded-lg text-xs text-editor-text-secondary">
+            <svg className="w-3.5 h-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+            </svg>
+            <input
+              type="number"
+              value={graph.canvas?.width ?? 1920}
+              onChange={(e) => setCanvas(parseInt(e.target.value) || 1920, graph.canvas?.height ?? 1080)}
+              className="w-12 bg-transparent text-center focus:outline-none focus:text-editor-text"
+              min={1}
+              max={8192}
+            />
+            <span className="opacity-40">×</span>
+            <input
+              type="number"
+              value={graph.canvas?.height ?? 1080}
+              onChange={(e) => setCanvas(graph.canvas?.width ?? 1920, parseInt(e.target.value) || 1080)}
+              className="w-12 bg-transparent text-center focus:outline-none focus:text-editor-text"
+              min={1}
+              max={8192}
+            />
+          </div>
 
           <div className="flex-1" />
 

@@ -77,6 +77,7 @@ interface GraphActions {
   newGraph: (name?: string) => void;
   loadGraph: (graph: Graph) => void;
   setGraphName: (name: string) => void;
+  setCanvas: (width: number, height: number) => void;
   addNode: (type: string, x: number, y: number) => string | null;
   removeNode: (nodeId: string) => void;
   removeNodes: (nodeIds: string[]) => void;
@@ -139,6 +140,12 @@ export const useGraphStore = create<GraphState & GraphActions>()(
   setGraphName: (name) => {
     set(produce((state: GraphState) => {
       state.graph.name = name;
+    }));
+  },
+
+  setCanvas: (width, height) => {
+    set(produce((state: GraphState) => {
+      state.graph.canvas = { width, height };
     }));
   },
 

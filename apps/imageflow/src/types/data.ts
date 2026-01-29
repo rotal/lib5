@@ -42,6 +42,9 @@ export interface Color {
 /**
  * Float image data with 32-bit float channels (0.0-1.0 range)
  * Supports HDR and high precision color processing
+ *
+ * Images exist in an infinite coordinate space. The origin defines
+ * where this image's top-left corner sits in that space.
  */
 export interface FloatImage {
   /** RGBA pixel data as Float32Array (r,g,b,a,r,g,b,a,...) in 0.0-1.0 range */
@@ -50,16 +53,36 @@ export interface FloatImage {
   width: number;
   /** Image height in pixels */
   height: number;
+  /** Origin position in infinite canvas space (default: 0,0) */
+  origin?: { x: number; y: number };
+}
+
+/**
+ * Get the boundary rect of a FloatImage in infinite canvas space
+ */
+export function getImageBoundary(image: FloatImage): Rect {
+  return {
+    x: image.origin?.x ?? 0,
+    y: image.origin?.y ?? 0,
+    width: image.width,
+    height: image.height,
+  };
 }
 
 /**
  * Create a new FloatImage with specified dimensions
+ * @param origin Optional origin position in infinite canvas space
  */
-export function createFloatImage(width: number, height: number): FloatImage {
+export function createFloatImage(
+  width: number,
+  height: number,
+  origin?: { x: number; y: number }
+): FloatImage {
   return {
     data: new Float32Array(width * height * 4),
     width,
     height,
+    origin,
   };
 }
 
@@ -102,6 +125,7 @@ export function cloneFloatImage(source: FloatImage): FloatImage {
     data: new Float32Array(source.data),
     width: source.width,
     height: source.height,
+    origin: source.origin ? { ...source.origin } : undefined,
   };
 }
 

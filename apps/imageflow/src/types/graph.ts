@@ -21,6 +21,15 @@ export interface ViewportState {
 }
 
 /**
+ * Project canvas settings - defines the final output resolution
+ * The canvas is the crop region in the infinite processing space
+ */
+export interface CanvasSettings {
+  width: number;
+  height: number;
+}
+
+/**
  * Complete graph state
  */
 export interface Graph {
@@ -29,6 +38,8 @@ export interface Graph {
   nodes: Record<string, NodeInstance>;
   edges: Record<string, Edge>;
   viewport: ViewportState;
+  /** Project canvas - defines final output resolution */
+  canvas: CanvasSettings;
 }
 
 /**
@@ -44,6 +55,7 @@ export interface SerializedGraph {
   nodes: NodeInstance[];
   edges: Edge[];
   viewport: ViewportState;
+  canvas?: CanvasSettings;
   preview?: {
     slots: [string | null, string | null, string | null];
     backgroundActive: boolean;
@@ -120,6 +132,9 @@ export interface GraphValidationResult {
   warnings: GraphValidationError[];
 }
 
+/** Default canvas size for new projects */
+export const DEFAULT_CANVAS: CanvasSettings = { width: 1920, height: 1080 };
+
 /**
  * Convert graph to serialized format
  */
@@ -134,6 +149,7 @@ export function serializeGraph(graph: Graph): SerializedGraph {
     nodes: Object.values(graph.nodes),
     edges: Object.values(graph.edges),
     viewport: graph.viewport,
+    canvas: graph.canvas,
   };
 }
 
@@ -158,6 +174,7 @@ export function deserializeGraph(serialized: SerializedGraph): Graph {
     nodes,
     edges,
     viewport: serialized.viewport,
+    canvas: serialized.canvas ?? { ...DEFAULT_CANVAS },
   };
 }
 
@@ -171,6 +188,7 @@ export function createEmptyGraph(name: string = 'Untitled'): Graph {
     nodes: {},
     edges: {},
     viewport: { x: 0, y: 0, zoom: 1 },
+    canvas: { ...DEFAULT_CANVAS },
   };
 }
 
