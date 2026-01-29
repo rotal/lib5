@@ -3,6 +3,7 @@ import { useUiStore } from '../../store';
 import { useViewport } from '../../hooks/useViewport';
 import { useGraph } from '../../hooks/useGraph';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
+import { areTypesCompatible } from '../../types/data';
 import { GraphNode } from './GraphNode';
 import { GraphEdge, DragEdge } from './GraphEdge';
 import { NodeSearchPopup } from './NodeSearchPopup';
@@ -63,7 +64,7 @@ export function GraphCanvas() {
 
   const { showContextMenu, setPreviewSlot, clearPreviewSlot, previewSlots } = useUiStore();
 
-  const [portPositions, setPortPositions] = useState<Map<string, { x: number; y: number }>>(new Map());
+  const [snapTarget, setSnapTarget] = useState<{ nodeId: string; portId: string } | null>(null);
   const edgesRef = useRef<SVGSVGElement>(null);
   const [searchPopup, setSearchPopup] = useState<SearchPopupState>({
     visible: false,
@@ -82,37 +83,115 @@ export function GraphCanvas() {
   const justFinishedMarquee = useRef(false);
   const lastMousePos = useRef({ x: 0, y: 0 });
 
-  // Update port positions when nodes change
-  useEffect(() => {
-    const updatePositions = () => {
-      if (!containerRef.current) return;
+  // Calculate port positions directly from node positions (no DOM queries)
+  // This ensures edges update instantly during dragging
+  const portPositions = useMemo(() => {
+    const positions = new Map<string, { x: number; y: number }>();
+    const NODE_WIDTH = 200; // Matches min-width in CSS
+    const HEADER_HEIGHT = 40; // Header area
+    const PORT_SIZE = 14; // Port diameter
+    const PORT_GAP = 8; // gap-2 in tailwind
 
-      const newPositions = new Map<string, { x: number; y: number }>();
-      const ports = containerRef.current.querySelectorAll('[data-port-id]');
+    for (const node of Object.values(graph.nodes)) {
+      const definition = NodeRegistry.get(node.type);
+      if (!definition) continue;
 
-      ports.forEach((port) => {
-        const portId = port.getAttribute('data-port-id');
-        const nodeId = port.getAttribute('data-node-id');
-        const direction = port.getAttribute('data-port-direction');
+      const maxPorts = Math.max(definition.inputs.length, definition.outputs.length, 1);
+      const portAreaHeight = maxPorts * 24 + 8;
 
-        if (portId && nodeId) {
-          const rect = port.getBoundingClientRect();
-          const containerRect = containerRef.current!.getBoundingClientRect();
+      // Calculate input port positions (left side)
+      const inputCount = definition.inputs.length;
+      if (inputCount > 0) {
+        const totalInputHeight = inputCount * PORT_SIZE + (inputCount - 1) * PORT_GAP;
+        const inputStartY = HEADER_HEIGHT + (portAreaHeight - totalInputHeight) / 2;
 
-          const x = (rect.left + rect.width / 2 - containerRect.left - containerRect.width / 2) / viewport.zoom - viewport.x;
-          const y = (rect.top + rect.height / 2 - containerRect.top - containerRect.height / 2) / viewport.zoom - viewport.y;
+        definition.inputs.forEach((port, index) => {
+          const x = node.position.x - 1; // Port center is 1px left of node edge (port is at -8px, width 14px, center at -1px)
+          const y = node.position.y + inputStartY + index * (PORT_SIZE + PORT_GAP) + PORT_SIZE / 2;
+          positions.set(`${node.id}:${port.id}:input`, { x, y });
+        });
+      }
 
-          newPositions.set(`${nodeId}:${portId}:${direction}`, { x, y });
-        }
-      });
+      // Calculate output port positions (right side)
+      const outputCount = definition.outputs.length;
+      if (outputCount > 0) {
+        const totalOutputHeight = outputCount * PORT_SIZE + (outputCount - 1) * PORT_GAP;
+        const outputStartY = HEADER_HEIGHT + (portAreaHeight - totalOutputHeight) / 2;
 
-      setPortPositions(newPositions);
-    };
+        definition.outputs.forEach((port, index) => {
+          const x = node.position.x + NODE_WIDTH + 1; // Port center is 1px right of node edge
+          const y = node.position.y + outputStartY + index * (PORT_SIZE + PORT_GAP) + PORT_SIZE / 2;
+          positions.set(`${node.id}:${port.id}:output`, { x, y });
+        });
+      }
+    }
 
-    // Update positions after a short delay to ensure DOM is updated
-    const timer = setTimeout(updatePositions, 10);
-    return () => clearTimeout(timer);
-  }, [graph.nodes, graph.edges, viewport, containerRef]);
+    return positions;
+  }, [graph.nodes]);
+
+  // Find nearest compatible port for auto-snap (50px threshold)
+  const findNearestCompatiblePort = useCallback((screenX: number, screenY: number): { nodeId: string; portId: string } | null => {
+    if (!connectionDrag || !containerRef.current) return null;
+
+    const SNAP_THRESHOLD = 50; // pixels in screen space
+    let nearest: { nodeId: string; portId: string; distance: number } | null = null;
+
+    // Get the source port's data type
+    const sourceNode = graph.nodes[connectionDrag.sourceNodeId];
+    if (!sourceNode) return null;
+    const sourceDef = NodeRegistry.get(sourceNode.type);
+    if (!sourceDef) return null;
+
+    const sourcePort = connectionDrag.sourceDirection === 'output'
+      ? sourceDef.outputs.find(p => p.id === connectionDrag.sourcePortId)
+      : sourceDef.inputs.find(p => p.id === connectionDrag.sourcePortId);
+    if (!sourcePort) return null;
+
+    // Target direction is opposite of source
+    const targetDirection = connectionDrag.sourceDirection === 'output' ? 'input' : 'output';
+
+    // Search all port positions
+    for (const [key, pos] of portPositions) {
+      const [nodeId, portId, direction] = key.split(':');
+
+      // Skip if same node or same direction
+      if (nodeId === connectionDrag.sourceNodeId) continue;
+      if (direction !== targetDirection) continue;
+
+      // Get target node's port definition for type checking
+      const targetNode = graph.nodes[nodeId];
+      if (!targetNode) continue;
+      const targetDef = NodeRegistry.get(targetNode.type);
+      if (!targetDef) continue;
+
+      const targetPort = targetDirection === 'input'
+        ? targetDef.inputs.find(p => p.id === portId)
+        : targetDef.outputs.find(p => p.id === portId);
+      if (!targetPort) continue;
+
+      // Check type compatibility
+      const compatible = connectionDrag.sourceDirection === 'output'
+        ? areTypesCompatible(sourcePort.dataType, targetPort.dataType)
+        : areTypesCompatible(targetPort.dataType, sourcePort.dataType);
+      if (!compatible) continue;
+
+      // Convert world position to screen position
+      const rect = containerRef.current.getBoundingClientRect();
+      const portScreenX = (pos.x + viewport.x) * viewport.zoom + rect.width / 2 + rect.left;
+      const portScreenY = (pos.y + viewport.y) * viewport.zoom + rect.height / 2 + rect.top;
+
+      // Calculate distance
+      const dx = screenX - portScreenX;
+      const dy = screenY - portScreenY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+
+      if (distance < SNAP_THRESHOLD && (!nearest || distance < nearest.distance)) {
+        nearest = { nodeId, portId, distance };
+      }
+    }
+
+    return nearest ? { nodeId: nearest.nodeId, portId: nearest.portId } : null;
+  }, [connectionDrag, graph.nodes, portPositions, viewport, containerRef]);
 
   // Handle canvas click (deselect) - only if not ending a marquee
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
@@ -264,26 +343,39 @@ export function GraphCanvas() {
     endConnectionDrag(nodeId, portId);
   }, [connectionDrag, addEdge, endConnectionDrag]);
 
-  // Track mouse movement for connection drag
+  // Track mouse/touch movement for connection drag
   useEffect(() => {
-    if (!connectionDrag) return;
+    if (!connectionDrag) {
+      setSnapTarget(null);
+      return;
+    }
 
-    const handleMouseMove = (e: MouseEvent) => {
-      updateConnectionDrag(e.clientX, e.clientY);
+    const handleMove = (clientX: number, clientY: number) => {
+      updateConnectionDrag(clientX, clientY);
+      // Update snap target
+      const nearest = findNearestCompatiblePort(clientX, clientY);
+      setSnapTarget(nearest);
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleEnd = (clientX: number, clientY: number, target: Element | null) => {
       // Check if we dropped on a port
-      const target = e.target as HTMLElement;
-      if (target.classList.contains('node-port')) {
+      if (target instanceof HTMLElement && target.classList.contains('node-port')) {
         const targetNodeId = target.getAttribute('data-node-id');
         const targetPortId = target.getAttribute('data-port-id');
         const targetDirection = target.getAttribute('data-port-direction');
 
         if (targetNodeId && targetPortId && targetDirection !== connectionDrag.sourceDirection) {
           handleConnectionEnd(targetNodeId, targetPortId);
+          setSnapTarget(null);
           return;
         }
+      }
+
+      // Check if we have a snap target
+      if (snapTarget) {
+        handleConnectionEnd(snapTarget.nodeId, snapTarget.portId);
+        setSnapTarget(null);
+        return;
       }
 
       // Dropped on empty space - show node search popup
@@ -299,12 +391,12 @@ export function GraphCanvas() {
         dataType = port?.dataType || 'any';
       }
 
-      const worldPos = screenToWorld(e.clientX, e.clientY);
+      const worldPos = screenToWorld(clientX, clientY);
 
       setSearchPopup({
         visible: true,
-        x: e.clientX,
-        y: e.clientY,
+        x: clientX,
+        y: clientY,
         worldX: worldPos.x,
         worldY: worldPos.y,
         pendingConnection: {
@@ -315,17 +407,44 @@ export function GraphCanvas() {
         },
       });
 
+      setSnapTarget(null);
       cancelConnectionDrag();
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      handleMove(e.clientX, e.clientY);
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      handleEnd(e.clientX, e.clientY, e.target as Element);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      e.preventDefault();
+      handleMove(e.touches[0].clientX, e.touches[0].clientY);
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.changedTouches.length !== 1) return;
+      const touch = e.changedTouches[0];
+      // For touch, get element under the touch point
+      const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+      handleEnd(touch.clientX, touch.clientY, targetElement);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [connectionDrag, updateConnectionDrag, handleConnectionEnd, cancelConnectionDrag, graph.nodes, screenToWorld]);
+  }, [connectionDrag, updateConnectionDrag, handleConnectionEnd, cancelConnectionDrag, graph.nodes, screenToWorld, findNearestCompatiblePort, snapTarget]);
 
   // Calculate edge positions
   const edgeData = useMemo(() => {
@@ -351,14 +470,22 @@ export function GraphCanvas() {
     });
   }, [graph.edges, graph.nodes, portPositions]);
 
-  // Calculate drag edge position
+  // Calculate drag edge position (with snap target support)
   const dragEdgeData = useMemo(() => {
     if (!connectionDrag || !containerRef.current) return null;
 
     const sourceKey = `${connectionDrag.sourceNodeId}:${connectionDrag.sourcePortId}:${connectionDrag.sourceDirection}`;
     const sourcePos = portPositions.get(sourceKey) || { x: 0, y: 0 };
 
-    const mouseWorld = screenToWorld(connectionDrag.mouseX, connectionDrag.mouseY);
+    // Use snap target position if available
+    let endPos: { x: number; y: number };
+    if (snapTarget) {
+      const targetDirection = connectionDrag.sourceDirection === 'output' ? 'input' : 'output';
+      const snapKey = `${snapTarget.nodeId}:${snapTarget.portId}:${targetDirection}`;
+      endPos = portPositions.get(snapKey) || screenToWorld(connectionDrag.mouseX, connectionDrag.mouseY);
+    } else {
+      endPos = screenToWorld(connectionDrag.mouseX, connectionDrag.mouseY);
+    }
 
     const sourceNode = graph.nodes[connectionDrag.sourceNodeId];
     const sourceNodeDef = sourceNode ? NodeRegistry.get(sourceNode.type) : null;
@@ -376,20 +503,22 @@ export function GraphCanvas() {
       return {
         sourceX: sourcePos.x,
         sourceY: sourcePos.y,
-        targetX: mouseWorld.x,
-        targetY: mouseWorld.y,
+        targetX: endPos.x,
+        targetY: endPos.y,
         dataType: dataType as any,
+        isSnapped: !!snapTarget,
       };
     } else {
       return {
-        sourceX: mouseWorld.x,
-        sourceY: mouseWorld.y,
+        sourceX: endPos.x,
+        sourceY: endPos.y,
         targetX: sourcePos.x,
         targetY: sourcePos.y,
         dataType: dataType as any,
+        isSnapped: !!snapTarget,
       };
     }
-  }, [connectionDrag, portPositions, screenToWorld, graph.nodes, containerRef]);
+  }, [connectionDrag, portPositions, screenToWorld, graph.nodes, containerRef, snapTarget]);
 
   // Track mouse position for Tab key
   useEffect(() => {

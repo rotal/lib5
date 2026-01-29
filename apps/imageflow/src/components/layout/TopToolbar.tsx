@@ -8,6 +8,49 @@ import { LoginButton, DriveFileDialog, LocalFileDialog } from '../auth';
 import { createFile as driveCreateFile, updateFile as driveUpdateFile } from '../../services/googleDrive';
 import { writeLocalFile, pickLocalDir, hasLocalDir } from '../../services/localProject';
 
+// Modern icon components
+const UndoIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+  </svg>
+);
+
+const RedoIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 15l6-6m0 0l-6-6m6 6H9a6 6 0 000 12h3" />
+  </svg>
+);
+
+const PlayIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" />
+  </svg>
+);
+
+const LiveIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
+  </svg>
+);
+
+const MenuIcon = () => (
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+  </svg>
+);
+
+const ChevronDownIcon = () => (
+  <svg className="w-3 h-3 ml-1 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+  </svg>
+);
+
+const FileIcon = () => (
+  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+  </svg>
+);
+
 export function TopToolbar() {
   const {
     graph,
@@ -21,6 +64,7 @@ export function TopToolbar() {
 
   const { newGraph, loadGraph, setGraphName } = useGraphStore();
   const {
+    isMobile,
     setViewMode,
     viewMode,
     showToast,
@@ -35,7 +79,9 @@ export function TopToolbar() {
   const executionStore = useExecutionStore();
 
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const fileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
 
   // Google Drive state
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -81,7 +127,7 @@ export function TopToolbar() {
     return serialized;
   }, [graph, previewSlots, previewBackgroundActive, previewForegroundSlot]);
 
-  // Save project silently - no dialog, creates new file if needed
+  // Save project
   const handleSave = useCallback(async () => {
     const serialized = buildSaveData();
 
@@ -117,7 +163,7 @@ export function TopToolbar() {
     }
   }, [buildSaveData, graph.name, showToast, isLoggedIn, currentDriveFileId, setCurrentDriveFileId]);
 
-  // Save As - show file dialog to pick name/location
+  // Save As
   const handleSaveAs = useCallback(() => {
     if (isLoggedIn) {
       setDriveDialogMode('save');
@@ -126,12 +172,11 @@ export function TopToolbar() {
     }
   }, [isLoggedIn]);
 
-  // Toggle live mode and execute if turning on
+  // Toggle live edit
   const handleToggleLiveEdit = useCallback(() => {
     const wasOff = !liveEdit;
     toggleLiveEdit();
 
-    // If turning on live mode, trigger execution
     if (wasOff && !executionStore.isExecuting) {
       const freshGraph = useGraphStore.getState().graph;
       executionStore.updateEngineGraph(freshGraph);
@@ -141,7 +186,6 @@ export function TopToolbar() {
 
   // Execute
   const handleExecute = useCallback(async () => {
-    // Validate first
     const validation = validateGraph(graph);
     if (!validation.valid) {
       const errorMsg = validation.errors.map(e => e.message).join('\n');
@@ -166,7 +210,7 @@ export function TopToolbar() {
     }
   }, [executeGraph, graph, showToast]);
 
-  // Drive dialog: open file callback
+  // Drive dialog handlers
   const handleDriveOpen = useCallback((content: any, fileId: string, fileName: string) => {
     try {
       const loadedGraph = deserializeGraph(content);
@@ -186,7 +230,6 @@ export function TopToolbar() {
     setDriveDialogMode(null);
   }, [loadGraph, clearAllPreviewSlots, restorePreviewSlots, setCurrentDriveFileId, showToast]);
 
-  // Drive dialog: provide serialized content for saving
   const handleDriveSaveContent = useCallback(async (fileName: string): Promise<object> => {
     const serialized = serializeGraph(graph);
     serialized.preview = {
@@ -198,17 +241,15 @@ export function TopToolbar() {
     return serialized;
   }, [graph, previewSlots, previewBackgroundActive, previewForegroundSlot, setGraphName]);
 
-  // Drive dialog: close handler (cancel or after action)
   const handleDriveDialogClose = useCallback(() => {
     setDriveDialogMode(null);
   }, []);
 
-  // Drive dialog: save success handler
   const handleDriveSaved = useCallback(() => {
     showToast('success', 'Saved to Drive', 2000);
   }, [showToast]);
 
-  // Local dialog: open file callback
+  // Local dialog handlers
   const handleLocalOpen = useCallback((content: any, fileName: string) => {
     try {
       const loadedGraph = deserializeGraph(content);
@@ -228,7 +269,6 @@ export function TopToolbar() {
     setLocalDialogMode(null);
   }, [loadGraph, clearAllPreviewSlots, restorePreviewSlots, setCurrentDriveFileId, showToast]);
 
-  // Local dialog: provide serialized content for saving
   const handleLocalSaveContent = useCallback(async (fileName: string): Promise<object> => {
     const serialized = serializeGraph(graph);
     serialized.preview = {
@@ -241,17 +281,15 @@ export function TopToolbar() {
     return serialized;
   }, [graph, previewSlots, previewBackgroundActive, previewForegroundSlot, setGraphName]);
 
-  // Local dialog: close handler
   const handleLocalDialogClose = useCallback(() => {
     setLocalDialogMode(null);
   }, []);
 
-  // Local dialog: save success handler
   const handleLocalSaved = useCallback(() => {
     showToast('success', 'Saved', 2000);
   }, [showToast]);
 
-  // Ctrl+S global shortcut
+  // Ctrl+S shortcut
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const cmdOrCtrl = navigator.platform.toUpperCase().indexOf('MAC') >= 0 ? e.metaKey : e.ctrlKey;
@@ -264,179 +302,251 @@ export function TopToolbar() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [handleSave]);
 
-  return (
-    <div className="h-12 bg-editor-surface border-b border-editor-border flex items-center px-3 gap-2">
-      {/* File menu */}
-      <div className="relative" ref={fileMenuRef}>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setFileMenuOpen(!fileMenuOpen)}
-          onBlur={(e) => {
-            // Close menu if focus leaves the menu entirely
-            if (!fileMenuRef.current?.contains(e.relatedTarget as Node)) {
-              setFileMenuOpen(false);
-            }
-          }}
+  // Close menus on click outside
+  useEffect(() => {
+    if (!mobileMenuOpen && !fileMenuOpen) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
+        setMobileMenuOpen(false);
+      }
+      if (fileMenuRef.current && !fileMenuRef.current.contains(e.target as Node)) {
+        setFileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [mobileMenuOpen, fileMenuOpen]);
+
+  // View mode toggle
+  const ViewModeToggle = () => (
+    <div className="flex items-center bg-editor-surface-solid rounded-lg p-0.5 border border-editor-border">
+      {(['graph', 'split', 'preview'] as const).map((mode) => (
+        <button
+          key={mode}
+          onClick={() => setViewMode(mode)}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
+            viewMode === mode
+              ? 'bg-editor-accent text-white shadow-sm'
+              : 'text-editor-text-dim hover:text-editor-text'
+          }`}
         >
-          File
-          <svg className="w-3 h-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </Button>
-        {fileMenuOpen && (
-          <div className="absolute top-full left-0 mt-1 bg-editor-surface border border-editor-border rounded shadow-lg py-1 min-w-[120px] z-50">
-            <button
-              className="w-full px-3 py-1.5 text-sm text-left text-editor-text hover:bg-editor-surface-light"
-              onClick={() => { handleNew(); setFileMenuOpen(false); }}
-            >
-              New
-            </button>
-            <button
-              className="w-full px-3 py-1.5 text-sm text-left text-editor-text hover:bg-editor-surface-light"
-              onClick={() => { handleOpen(); setFileMenuOpen(false); }}
-            >
-              Open
-            </button>
-            <div className="h-px bg-editor-border my-1" />
-            <button
-              className="w-full px-3 py-1.5 text-sm text-left text-editor-text hover:bg-editor-surface-light"
-              onClick={() => { handleSave(); setFileMenuOpen(false); }}
-            >
-              Save
-            </button>
-            <button
-              className="w-full px-3 py-1.5 text-sm text-left text-editor-text hover:bg-editor-surface-light"
-              onClick={() => { handleSaveAs(); setFileMenuOpen(false); }}
-            >
-              Save As...
-            </button>
-          </div>
-        )}
-      </div>
+          {mode.charAt(0).toUpperCase() + mode.slice(1)}
+        </button>
+      ))}
+    </div>
+  );
 
-      <div className="w-px h-6 bg-editor-border" />
+  // File menu dropdown
+  const FileMenuDropdown = ({ onClose }: { onClose: () => void }) => (
+    <div className="dropdown-menu absolute top-full left-0 mt-1.5 z-50 min-w-[140px]">
+      <button className="dropdown-item w-full" onClick={() => { handleNew(); onClose(); }}>
+        <FileIcon />
+        New
+        <span className="ml-auto text-editor-text-dim text-[10px]">Ctrl+N</span>
+      </button>
+      <button className="dropdown-item w-full" onClick={() => { handleOpen(); onClose(); }}>
+        Open...
+        <span className="ml-auto text-editor-text-dim text-[10px]">Ctrl+O</span>
+      </button>
+      <div className="dropdown-divider" />
+      <button className="dropdown-item w-full" onClick={() => { handleSave(); onClose(); }}>
+        Save
+        <span className="ml-auto text-editor-text-dim text-[10px]">Ctrl+S</span>
+      </button>
+      <button className="dropdown-item w-full" onClick={() => { handleSaveAs(); onClose(); }}>
+        Save As...
+      </button>
+    </div>
+  );
 
-      {/* History */}
-      <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={undo}
-          disabled={!canUndo}
-          title="Undo (Ctrl+Z)"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-          </svg>
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={redo}
-          disabled={!canRedo}
-          title="Redo (Ctrl+Shift+Z)"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-          </svg>
-        </Button>
-      </div>
+  // Mobile menu content
+  const MobileMenuContent = () => (
+    <div className="dropdown-menu absolute top-full right-0 mt-1.5 z-50 min-w-[200px]">
+      {/* File section */}
+      <div className="px-3 py-1.5 text-[10px] font-semibold text-editor-text-dim uppercase tracking-wider">File</div>
+      <button className="dropdown-item w-full" onClick={() => { handleNew(); setMobileMenuOpen(false); }}>New</button>
+      <button className="dropdown-item w-full" onClick={() => { handleOpen(); setMobileMenuOpen(false); }}>Open</button>
+      <button className="dropdown-item w-full" onClick={() => { handleSave(); setMobileMenuOpen(false); }}>Save</button>
+      <button className="dropdown-item w-full" onClick={() => { handleSaveAs(); setMobileMenuOpen(false); }}>Save As...</button>
 
-      <div className="w-px h-6 bg-editor-border" />
+      <div className="dropdown-divider" />
 
-      {/* Execute */}
-      <Button
-        variant="primary"
-        size="sm"
-        onClick={handleExecute}
-        disabled={isExecuting}
-      >
-        {isExecuting ? (
-          <>
-            <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            Running...
-          </>
-        ) : (
-          <>
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Execute
-          </>
-        )}
-      </Button>
-
-      {/* Live Edit Toggle */}
+      {/* History section */}
+      <div className="px-3 py-1.5 text-[10px] font-semibold text-editor-text-dim uppercase tracking-wider">History</div>
       <button
-        onClick={handleToggleLiveEdit}
-        className={`px-3 py-1.5 text-xs font-medium rounded transition-colors flex items-center gap-1.5 ${
-          liveEdit
-            ? 'bg-green-600 text-white'
-            : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
-        }`}
-        title="Auto-execute when parameters change"
+        className={`dropdown-item w-full ${!canUndo ? 'disabled' : ''}`}
+        onClick={() => { if (canUndo) { undo(); setMobileMenuOpen(false); } }}
+        disabled={!canUndo}
       >
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-        Live
+        <UndoIcon /> Undo
+      </button>
+      <button
+        className={`dropdown-item w-full ${!canRedo ? 'disabled' : ''}`}
+        onClick={() => { if (canRedo) { redo(); setMobileMenuOpen(false); } }}
+        disabled={!canRedo}
+      >
+        <RedoIcon /> Redo
       </button>
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      <div className="dropdown-divider" />
 
-      {/* Project name */}
-      <input
-        type="text"
-        value={graph.name}
-        onChange={(e) => setGraphName(e.target.value)}
-        className="px-2 py-1 bg-transparent border-none text-sm text-editor-text text-center focus:outline-none focus:bg-editor-surface-light rounded"
-        style={{ width: '200px' }}
-      />
-
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* View mode toggle */}
-      <div className="flex items-center bg-editor-surface-light rounded overflow-hidden">
-        <button
-          onClick={() => setViewMode('graph')}
-          className={`px-3 py-1 text-xs ${
-            viewMode === 'graph'
-              ? 'bg-editor-accent text-white'
-              : 'text-editor-text-dim hover:text-editor-text'
-          }`}
-        >
-          Graph
-        </button>
-        <button
-          onClick={() => setViewMode('split')}
-          className={`px-3 py-1 text-xs ${
-            viewMode === 'split'
-              ? 'bg-editor-accent text-white'
-              : 'text-editor-text-dim hover:text-editor-text'
-          }`}
-        >
-          Split
-        </button>
-        <button
-          onClick={() => setViewMode('preview')}
-          className={`px-3 py-1 text-xs ${
-            viewMode === 'preview'
-              ? 'bg-editor-accent text-white'
-              : 'text-editor-text-dim hover:text-editor-text'
-          }`}
-        >
-          Preview
-        </button>
+      {/* View section */}
+      <div className="px-3 py-1.5 text-[10px] font-semibold text-editor-text-dim uppercase tracking-wider">View</div>
+      <div className="px-3 py-2">
+        <ViewModeToggle />
       </div>
 
-      {/* Google Login */}
-      <LoginButton />
+      <div className="dropdown-divider" />
 
-      {/* Drive file dialog */}
+      {/* Account section */}
+      <div className="px-3 py-2">
+        <LoginButton />
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="h-12 bg-editor-surface-solid/95 backdrop-blur-xl border-b border-editor-border flex items-center px-3 gap-2 safe-area-pt relative z-50 overflow-visible">
+      {/* Mobile layout */}
+      {isMobile ? (
+        <>
+          {/* Execute button */}
+          <Button variant="primary" size="sm" onClick={handleExecute} disabled={isExecuting}>
+            {isExecuting ? (
+              <div className="w-4 h-4 spinner" />
+            ) : (
+              <PlayIcon />
+            )}
+          </Button>
+
+          {/* Live toggle */}
+          <button
+            onClick={handleToggleLiveEdit}
+            className={`p-2 rounded-lg transition-all duration-200 ${
+              liveEdit
+                ? 'bg-editor-success text-white shadow-sm'
+                : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
+            }`}
+            title="Auto-execute on changes"
+          >
+            <LiveIcon />
+          </button>
+
+          <div className="flex-1" />
+
+          {/* Project name */}
+          <input
+            type="text"
+            value={graph.name}
+            onChange={(e) => setGraphName(e.target.value)}
+            className="px-2 py-1 bg-transparent text-sm text-editor-text text-center focus:outline-none focus:bg-editor-surface rounded-lg max-w-[100px] transition-colors"
+          />
+
+          <div className="flex-1" />
+
+          {/* Menu button */}
+          <div className="relative" ref={mobileMenuRef}>
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="p-2 text-editor-text-secondary hover:text-editor-text hover:bg-editor-surface-light rounded-lg transition-colors"
+            >
+              <MenuIcon />
+            </button>
+            {mobileMenuOpen && <MobileMenuContent />}
+          </div>
+        </>
+      ) : (
+        /* Desktop layout */
+        <>
+          {/* Logo */}
+          <div className="flex items-center gap-2 mr-2">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-editor-accent to-purple-600 flex items-center justify-center">
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5z" />
+              </svg>
+            </div>
+          </div>
+
+          {/* File menu */}
+          <div className="relative" ref={fileMenuRef}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setFileMenuOpen(!fileMenuOpen)}
+            >
+              File
+              <ChevronDownIcon />
+            </Button>
+            {fileMenuOpen && <FileMenuDropdown onClose={() => setFileMenuOpen(false)} />}
+          </div>
+
+          <div className="w-px h-5 bg-editor-border mx-1" />
+
+          {/* History buttons */}
+          <div className="flex items-center gap-0.5">
+            <Button variant="ghost" size="sm" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+              <UndoIcon />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Shift+Z)">
+              <RedoIcon />
+            </Button>
+          </div>
+
+          <div className="w-px h-5 bg-editor-border mx-1" />
+
+          {/* Execute */}
+          <Button variant="primary" size="sm" onClick={handleExecute} disabled={isExecuting}>
+            {isExecuting ? (
+              <>
+                <div className="w-3 h-3 spinner" />
+                Running...
+              </>
+            ) : (
+              <>
+                <PlayIcon />
+                Execute
+              </>
+            )}
+          </Button>
+
+          {/* Live toggle */}
+          <button
+            onClick={handleToggleLiveEdit}
+            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 flex items-center gap-1.5 ${
+              liveEdit
+                ? 'bg-editor-success text-white shadow-sm'
+                : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text border border-editor-border'
+            }`}
+            title="Auto-execute on changes"
+          >
+            <LiveIcon />
+            Live
+          </button>
+
+          <div className="flex-1" />
+
+          {/* Project name */}
+          <input
+            type="text"
+            value={graph.name}
+            onChange={(e) => setGraphName(e.target.value)}
+            className="px-3 py-1.5 bg-editor-surface-light/50 border border-editor-border rounded-lg text-sm text-editor-text text-center focus:outline-none focus:border-editor-accent focus:ring-2 focus:ring-editor-accent/20 transition-all w-[180px]"
+            placeholder="Project name"
+          />
+
+          <div className="flex-1" />
+
+          {/* View mode toggle */}
+          <ViewModeToggle />
+
+          {/* Login button */}
+          <LoginButton />
+        </>
+      )}
+
+      {/* Dialogs */}
       {driveDialogMode && (
         <DriveFileDialog
           mode={driveDialogMode}
@@ -448,7 +558,6 @@ export function TopToolbar() {
         />
       )}
 
-      {/* Local file dialog */}
       {localDialogMode && (
         <LocalFileDialog
           mode={localDialogMode}

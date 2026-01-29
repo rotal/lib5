@@ -1,5 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useGraph } from './useGraph';
+import { useGraphStore } from '../store';
 
 /**
  * Hook for keyboard shortcuts
@@ -16,6 +17,8 @@ export function useKeyboard() {
     canUndo,
     canRedo,
   } = useGraph();
+
+  const toggleAllPreviews = useGraphStore((s) => s.toggleAllPreviews);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Don't handle shortcuts when typing in inputs
@@ -84,7 +87,14 @@ export function useKeyboard() {
       // Could call clearSelection here
       return;
     }
-  }, [undo, redo, copy, cut, paste, selectAll, deleteSelection, canUndo, canRedo]);
+
+    // V (without modifiers): Toggle all node previews
+    if (e.key === 'v' && !cmdOrCtrl && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      toggleAllPreviews();
+      return;
+    }
+  }, [undo, redo, copy, cut, paste, selectAll, deleteSelection, canUndo, canRedo, toggleAllPreviews]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

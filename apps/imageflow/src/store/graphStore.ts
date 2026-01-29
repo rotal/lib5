@@ -69,6 +69,8 @@ interface GraphState {
     nodes: NodeInstance[];
     edges: Edge[];
   } | null;
+  // Stores node IDs that had preview enabled before toggling off (null = previews are showing)
+  hiddenPreviewNodeIds: Set<string> | null;
 }
 
 interface GraphActions {
@@ -82,6 +84,7 @@ interface GraphActions {
   updateNodeParameter: (nodeId: string, paramId: string, value: unknown) => void;
   setNodeCollapsed: (nodeId: string, collapsed: boolean) => void;
   setNodeLocalPreview: (nodeId: string, show: boolean) => void;
+  toggleAllPreviews: () => void;
   addEdge: (sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId: string) => string | null;
   removeEdge: (edgeId: string) => void;
   removeEdges: (edgeIds: string[]) => void;
@@ -113,6 +116,7 @@ export const useGraphStore = create<GraphState & GraphActions>()(
       selectedEdgeIds: new Set(),
       connectionDrag: null,
       clipboard: null,
+      hiddenPreviewNodeIds: null,
 
   newGraph: (name = 'Untitled') => {
     set({
@@ -207,11 +211,57 @@ export const useGraphStore = create<GraphState & GraphActions>()(
 
   setNodeLocalPreview: (nodeId, show) => {
     set(produce((state: GraphState) => {
+      // If previews are currently hidden and user is enabling a new preview
+      if (state.hiddenPreviewNodeIds !== null && show) {
+        // Clear the hidden state - start fresh with only the new preview
+        state.hiddenPreviewNodeIds = null;
+        // Don't restore old previews - they stay off
+      }
+
+      // Apply the user's requested change
       const node = state.graph.nodes[nodeId];
       if (node) {
         node.localPreview = show;
       }
     }));
+  },
+
+  toggleAllPreviews: () => {
+    const { graph, hiddenPreviewNodeIds } = get();
+
+    if (hiddenPreviewNodeIds === null) {
+      // Previews are currently showing - hide them and remember which ones
+      const nodesWithPreview = new Set<string>();
+      for (const node of Object.values(graph.nodes)) {
+        if (node.localPreview) {
+          nodesWithPreview.add(node.id);
+        }
+      }
+
+      // Only toggle if there are previews to hide
+      if (nodesWithPreview.size > 0) {
+        set(produce((state: GraphState) => {
+          for (const nodeId of nodesWithPreview) {
+            const node = state.graph.nodes[nodeId];
+            if (node) {
+              node.localPreview = false;
+            }
+          }
+          state.hiddenPreviewNodeIds = nodesWithPreview;
+        }));
+      }
+    } else {
+      // Previews are hidden - restore them
+      set(produce((state: GraphState) => {
+        for (const nodeId of hiddenPreviewNodeIds) {
+          const node = state.graph.nodes[nodeId];
+          if (node) {
+            node.localPreview = true;
+          }
+        }
+        state.hiddenPreviewNodeIds = null;
+      }));
+    }
   },
 
   addEdge: (sourceNodeId, sourcePortId, targetNodeId, targetPortId) => {
