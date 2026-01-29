@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
-import { useGraphStore } from '../../store';
+import { useGraph } from '../../hooks/useGraph';
 import type { GizmoDefinition, GizmoHandle, NodeInstance } from '../../types/node';
 
 interface GizmoOverlayProps {
@@ -40,7 +40,7 @@ export function GizmoOverlay({
   containerRef,
   canvasRef,
 }: GizmoOverlayProps) {
-  const { updateNodeParameter } = useGraphStore();
+  const { updateNodeParameter, commitParameterChange } = useGraph();
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -344,6 +344,13 @@ export function GizmoOverlay({
     };
 
     const handleMouseUp = () => {
+      // Commit parameter change to history and ensure execution
+      if (dragState) {
+        const paramIds = Object.keys(dragState.startParams);
+        if (paramIds.length > 0) {
+          commitParameterChange(node.id, paramIds[0]);
+        }
+      }
       setDragState(null);
     };
 
@@ -363,6 +370,7 @@ export function GizmoOverlay({
     screenToImage,
     imageToScreen,
     updateNodeParameter,
+    commitParameterChange,
     containerRef,
   ]);
 
