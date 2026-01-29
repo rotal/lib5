@@ -224,19 +224,101 @@ export function isGPUTexture(value: unknown): value is GPUTexture {
 }
 
 /**
- * Check if two data types are compatible for connection
+ * Check if two data types are compatible for connection.
+ * This is directional: areTypesCompatible(source, target).
+ *
+ * Allowed cross-type connections (with auto-coercion):
+ *   mask   → image   (R channel duplicated to RGB, A=1.0)
+ *   number → image   (solid constant FloatImage)
+ *   number → mask    (solid constant FloatImage)
+ *
+ * Banned:
+ *   image  → mask    (ambiguous: which channel?)
  */
 export function areTypesCompatible(source: DataType, target: DataType): boolean {
   if (source === target) return true;
   if (target === 'any') return true;
   if (source === 'any') return true;
 
-  // Image and mask are compatible (mask is grayscale image)
-  if ((source === 'image' && target === 'mask') || (source === 'mask' && target === 'image')) {
-    return true;
-  }
+  // mask → image is allowed (auto-coerced)
+  if (source === 'mask' && target === 'image') return true;
+
+  // number → image or number → mask (auto-coerced to solid constant)
+  if (source === 'number' && (target === 'image' || target === 'mask')) return true;
 
   return false;
+}
+
+/**
+ * Coerce a port value from one data type to another.
+ * Only handles the allowed cross-type conversions:
+ *   mask   → image  : duplicate R channel to RGB, A = 1.0
+ *   number → image  : solid constant FloatImage (RGB = value, A = 1.0)
+ *   number → mask   : solid constant FloatImage (all channels = value)
+ *
+ * If sourceType === targetType or either is 'any', value is returned unchanged.
+ *
+ * @param width  Output width for number→image/mask coercion
+ * @param height Output height for number→image/mask coercion
+ */
+export function coercePortValue(
+  value: PortValue,
+  sourceType: DataType,
+  targetType: DataType,
+  width: number = 512,
+  height: number = 512,
+): PortValue {
+  // No coercion needed for identical types or 'any' ports
+  if (sourceType === targetType || sourceType === 'any' || targetType === 'any') {
+    return value;
+  }
+
+  // mask → image: duplicate R channel to RGB, A = 1.0
+  if (sourceType === 'mask' && targetType === 'image') {
+    const src = value as FloatImage;
+    if (!src || !src.data) return value;
+    const dst = createFloatImage(src.width, src.height);
+    const srcData = src.data;
+    const dstData = dst.data;
+    const pixelCount = src.width * src.height;
+    for (let i = 0; i < pixelCount; i++) {
+      const si = i * 4;
+      const gray = srcData[si]; // R channel as the grayscale value
+      dstData[si] = gray;
+      dstData[si + 1] = gray;
+      dstData[si + 2] = gray;
+      dstData[si + 3] = 1.0;
+    }
+    return dst;
+  }
+
+  // number → image: solid constant (RGB = value, A = 1.0)
+  if (sourceType === 'number' && targetType === 'image') {
+    const v = value as number;
+    const img = createFloatImage(width, height);
+    const data = img.data;
+    const pixelCount = width * height;
+    for (let i = 0; i < pixelCount; i++) {
+      const off = i * 4;
+      data[off] = v;
+      data[off + 1] = v;
+      data[off + 2] = v;
+      data[off + 3] = 1.0;
+    }
+    return img;
+  }
+
+  // number → mask: solid constant (all channels = value)
+  if (sourceType === 'number' && targetType === 'mask') {
+    const v = value as number;
+    const img = createFloatImage(width, height);
+    const data = img.data;
+    data.fill(v);
+    return img;
+  }
+
+  // Fallback: return value unchanged
+  return value;
 }
 
 /**

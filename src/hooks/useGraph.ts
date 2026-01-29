@@ -20,12 +20,18 @@ export function useGraph() {
       historyStore.saveState(graphStore.graph, 'Initial state');
       isInitialized.current = true;
 
-      // Auto-execute on load if live edit is enabled
-      if (uiStore.liveEdit) {
-        executionStore.execute();
-      }
+      // Always execute on load
+      executionStore.execute();
     } else {
       executionStore.updateEngineGraph(graphStore.graph);
+
+      // Re-execute after graph hydration from persist (graph changed but no outputs yet)
+      if (Object.keys(executionStore.nodeOutputs).length === 0 &&
+          Object.keys(graphStore.graph.nodes).length > 0 &&
+          !executionStore.isExecuting &&
+          !executionStore.executionError) {
+        executionStore.execute();
+      }
     }
   }, [graphStore.graph, executionStore, historyStore, uiStore.liveEdit]);
 

@@ -2,8 +2,6 @@ import React, { useMemo, useCallback } from 'react';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
 import { NodeCategory, NodeDefinition } from '../../types/node';
 import { useUiStore } from '../../store';
-import { useGraph } from '../../hooks/useGraph';
-import { useViewport } from '../../hooks/useViewport';
 
 const CATEGORY_ORDER: NodeCategory[] = [
   'Input',
@@ -31,8 +29,6 @@ const CATEGORY_COLORS: Record<NodeCategory, string> = {
 
 export function NodePalette() {
   const { paletteSearchQuery, setPaletteSearch, expandedCategories, toggleCategory } = useUiStore();
-  const { addNode } = useGraph();
-  const { screenToWorld, containerRef } = useViewport();
 
   // Get all nodes grouped by category
   const categories = useMemo(() => {
@@ -58,21 +54,6 @@ export function NodePalette() {
 
     return result;
   }, [paletteSearchQuery]);
-
-  const handleAddNode = useCallback((type: string) => {
-    // Add node near center of viewport
-    let x = 100;
-    let y = 100;
-
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const center = screenToWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      x = center.x - 90; // Half of typical node width
-      y = center.y - 50; // Half of typical node height
-    }
-
-    addNode(type, x, y);
-  }, [addNode, screenToWorld, containerRef]);
 
   const handleDragStart = useCallback((e: React.DragEvent, type: string) => {
     e.dataTransfer.setData('nodeType', type);
@@ -124,8 +105,7 @@ export function NodePalette() {
                 {nodes.map((node) => (
                   <div
                     key={node.type}
-                    className="mx-2 my-1 px-3 py-2 bg-editor-surface-light rounded cursor-pointer hover:bg-editor-border transition-colors"
-                    onClick={() => handleAddNode(node.type)}
+                    className="mx-2 my-1 px-3 py-2 bg-editor-surface-light rounded cursor-grab hover:bg-editor-border transition-colors"
                     draggable
                     onDragStart={(e) => handleDragStart(e, node.type)}
                   >

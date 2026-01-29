@@ -1,6 +1,6 @@
 import { Graph, GraphExecutionState } from '../../types/graph';
 import { NodeRuntimeState, ExecutionContext } from '../../types/node';
-import { PortValue, isGPUTexture } from '../../types/data';
+import { PortValue, DataType, isGPUTexture, isFloatImage, coercePortValue } from '../../types/data';
 import { GPUContext } from '../../types/gpu';
 import { NodeRegistry } from './NodeRegistry';
 import { topologicalSort, getPartialExecutionOrder } from './TopologicalSort';
@@ -251,7 +251,33 @@ export class GraphEngine {
           // Get output from source node's cache
           const sourceOutputs = this.outputCache.get(edge.sourceNodeId);
           if (sourceOutputs) {
-            inputs[inputDef.id] = sourceOutputs[edge.sourcePortId];
+            let value = sourceOutputs[edge.sourcePortId];
+
+            // Auto-coerce between compatible but different port types
+            const sourceNode = this.graph.nodes[edge.sourceNodeId];
+            const sourceDef = sourceNode ? NodeRegistry.get(sourceNode.type) : undefined;
+            const sourcePort = sourceDef?.outputs.find(o => o.id === edge.sourcePortId);
+            const sourceType: DataType = sourcePort?.dataType ?? 'any';
+            const targetType: DataType = inputDef.dataType;
+
+            if (sourceType !== targetType && sourceType !== 'any' && targetType !== 'any') {
+              // For number→image/mask, resolve dimensions from other image/mask inputs
+              let coerceWidth = 512;
+              let coerceHeight = 512;
+              if (sourceType === 'number' && (targetType === 'image' || targetType === 'mask')) {
+                // Scan already-resolved inputs for an image/mask to steal dimensions
+                for (const resolved of Object.values(inputs)) {
+                  if (resolved && isFloatImage(resolved)) {
+                    coerceWidth = resolved.width;
+                    coerceHeight = resolved.height;
+                    break;
+                  }
+                }
+              }
+              value = coercePortValue(value, sourceType, targetType, coerceWidth, coerceHeight);
+            }
+
+            inputs[inputDef.id] = value;
           }
         } else if (inputDef.defaultValue !== undefined) {
           inputs[inputDef.id] = inputDef.defaultValue;

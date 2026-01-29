@@ -1,12 +1,18 @@
 import { useMemo, useCallback } from 'react';
-import { useGraphStore } from '../../store';
+import { useGraphStore, useExecutionStore } from '../../store';
 import { useGraph } from '../../hooks/useGraph';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
 import { ParameterInput } from './ParameterInput';
 
+interface DownloadData {
+  url: string;
+  filename: string;
+}
+
 export function PropertiesPanel() {
   const { selectedNodeIds, graph } = useGraphStore();
   const { updateNodeParameter, commitParameterChange } = useGraph();
+  const nodeOutputs = useExecutionStore((s) => s.nodeOutputs);
 
   // Get selected nodes
   const selectedNodes = useMemo(() => {
@@ -34,6 +40,28 @@ export function PropertiesPanel() {
     },
     [node, commitParameterChange]
   );
+
+  // Get download data for Export nodes
+  const downloadData = useMemo((): DownloadData | null => {
+    if (!node || node.type !== 'output/export') return null;
+    const outputs = nodeOutputs[node.id];
+    if (!outputs || !outputs._downloadData) return null;
+    try {
+      return JSON.parse(outputs._downloadData as string) as DownloadData;
+    } catch {
+      return null;
+    }
+  }, [node, nodeOutputs]);
+
+  const handleDownload = useCallback(() => {
+    if (!downloadData) return;
+    const a = document.createElement('a');
+    a.href = downloadData.url;
+    a.download = downloadData.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }, [downloadData]);
 
   if (!node || !definition) {
     return (
@@ -89,6 +117,26 @@ export function PropertiesPanel() {
                 onChangeEnd={() => handleParameterChangeEnd(param.id)}
               />
             ))
+        )}
+
+        {/* Download button for Export node */}
+        {node.type === 'output/export' && (
+          <div className="pt-2 border-t border-editor-border">
+            <button
+              onClick={handleDownload}
+              disabled={!downloadData}
+              className={`w-full px-4 py-2 rounded font-medium text-sm flex items-center justify-center gap-2 transition-colors ${
+                downloadData
+                  ? 'bg-editor-accent text-white hover:bg-editor-accent/80'
+                  : 'bg-editor-surface-light text-editor-text-dim cursor-not-allowed'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              {downloadData ? `Download ${downloadData.filename}` : 'Execute to enable download'}
+            </button>
+          </div>
         )}
       </div>
 

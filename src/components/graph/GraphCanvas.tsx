@@ -110,6 +110,24 @@ export function GraphCanvas() {
     showContextMenu(e.clientX, e.clientY, 'canvas');
   }, [showContextMenu]);
 
+  // Handle drag over (allow drop)
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes('nodetype')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
+
+  // Handle drop (create node at drop position)
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const nodeType = e.dataTransfer.getData('nodeType');
+    if (!nodeType) return;
+
+    const worldPos = screenToWorld(e.clientX, e.clientY);
+    addNode(nodeType, worldPos.x - 90, worldPos.y - 50); // Center the node on drop point
+  }, [screenToWorld, addNode]);
+
   // Handle connection start
   const handleConnectionStart = useCallback((
     nodeId: string,
@@ -351,6 +369,8 @@ export function GraphCanvas() {
       className="relative w-full h-full overflow-hidden graph-background select-none"
       onClick={handleCanvasClick}
       onContextMenu={handleContextMenu}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
       {...handlers}
       style={{ cursor: isPanning ? 'grabbing' : 'default' }}
     >

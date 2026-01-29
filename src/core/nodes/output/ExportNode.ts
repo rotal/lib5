@@ -1,4 +1,4 @@
-import { defineNode, ensureFloatImage } from '../defineNode';
+import { defineNode } from '../defineNode';
 import { floatToImageData } from '../../../types/data';
 
 export const ExportNode = defineNode({
@@ -17,7 +17,13 @@ export const ExportNode = defineNode({
     },
   ],
 
-  outputs: [],
+  outputs: [
+    {
+      id: 'image',
+      name: 'Image',
+      dataType: 'image',
+    },
+  ],
 
   parameters: [
     {
@@ -46,32 +52,27 @@ export const ExportNode = defineNode({
       constraints: { min: 1, max: 100, step: 1 },
       description: 'Quality for JPEG/WebP (1-100)',
     },
-    {
-      id: 'autoDownload',
-      name: 'Auto Download',
-      type: 'boolean',
-      default: false,
-      description: 'Automatically trigger download on execution',
-    },
   ],
 
-  async execute(inputs, params, context) {
+  async execute(inputs, params) {
     const input = inputs.image;
     const filename = params.filename as string;
     const format = params.format as 'png' | 'jpeg' | 'webp';
     const quality = (params.quality as number) / 100;
-    const autoDownload = params.autoDownload as boolean;
 
     if (!input) {
       return {};
     }
 
-    // Convert to FloatImage first, then to ImageData for canvas
-    const floatImage = ensureFloatImage(input, context);
-    if (!floatImage) {
+    // Convert to ImageData for canvas
+    let image: ImageData;
+    if (input instanceof ImageData) {
+      image = input;
+    } else if (typeof input === 'object' && input !== null && 'data' in input && (input as { data: unknown }).data instanceof Float32Array) {
+      image = floatToImageData(input as Parameters<typeof floatToImageData>[0]);
+    } else {
       return {};
     }
-    const image = floatToImageData(floatImage);
 
     // Create canvas and draw image
     const canvas = new OffscreenCanvas(image.width, image.height);
@@ -90,23 +91,16 @@ export const ExportNode = defineNode({
       quality: format === 'png' ? undefined : quality,
     });
 
-    // Auto download if enabled
-    if (autoDownload && typeof document !== 'undefined') {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${filename}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
-
-    // Store blob URL in cache for manual download
+    // Create blob URL for download
     const blobUrl = URL.createObjectURL(blob);
-    context.setCache('exportUrl', blobUrl as unknown as ImageData);
-    context.setCache('exportBlob', blob as unknown as ImageData);
 
-    return {};
+    // Return image passthrough + download data
+    return {
+      image: input,
+      _downloadData: JSON.stringify({
+        url: blobUrl,
+        filename: `${filename}.${format}`,
+      }),
+    };
   },
 });

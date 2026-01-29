@@ -8,6 +8,7 @@ import {
   ViewportState,
   createEmptyGraph,
   getPortEdges,
+  areTypesCompatible,
 } from '../types';
 import { NodeRegistry } from '../core/graph/NodeRegistry';
 import { wouldCreateCycle } from '../core/graph/TopologicalSort';
@@ -80,6 +81,7 @@ interface GraphActions {
   updateNodePosition: (nodeId: string, x: number, y: number) => void;
   updateNodeParameter: (nodeId: string, paramId: string, value: unknown) => void;
   setNodeCollapsed: (nodeId: string, collapsed: boolean) => void;
+  setNodeLocalPreview: (nodeId: string, show: boolean) => void;
   addEdge: (sourceNodeId: string, sourcePortId: string, targetNodeId: string, targetPortId: string) => string | null;
   removeEdge: (edgeId: string) => void;
   removeEdges: (edgeIds: string[]) => void;
@@ -203,6 +205,15 @@ export const useGraphStore = create<GraphState & GraphActions>()(
     }));
   },
 
+  setNodeLocalPreview: (nodeId, show) => {
+    set(produce((state: GraphState) => {
+      const node = state.graph.nodes[nodeId];
+      if (node) {
+        node.localPreview = show;
+      }
+    }));
+  },
+
   addEdge: (sourceNodeId, sourcePortId, targetNodeId, targetPortId) => {
     const { graph } = get();
 
@@ -212,6 +223,19 @@ export const useGraphStore = create<GraphState & GraphActions>()(
 
     if (wouldCreateCycle(graph, sourceNodeId, targetNodeId)) {
       return null;
+    }
+
+    // Check type compatibility
+    const sourceNode = graph.nodes[sourceNodeId];
+    const targetNode = graph.nodes[targetNodeId];
+    const sourceDef = NodeRegistry.get(sourceNode.type);
+    const targetDef = NodeRegistry.get(targetNode.type);
+    if (sourceDef && targetDef) {
+      const sourcePort = sourceDef.outputs.find(p => p.id === sourcePortId);
+      const targetPort = targetDef.inputs.find(p => p.id === targetPortId);
+      if (sourcePort && targetPort && !areTypesCompatible(sourcePort.dataType, targetPort.dataType)) {
+        return null;
+      }
     }
 
     const existingEdges = getPortEdges(graph, targetNodeId, targetPortId, 'input');
