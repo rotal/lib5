@@ -81,8 +81,16 @@ export function TopToolbar() {
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [canvasLocked, setCanvasLocked] = useState(false); // Lock aspect ratio
+  const [canvasWidthInput, setCanvasWidthInput] = useState(String(graph.canvas?.width ?? 1920));
+  const [canvasHeightInput, setCanvasHeightInput] = useState(String(graph.canvas?.height ?? 1080));
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+
+  // Sync local canvas inputs when graph canvas changes externally
+  useEffect(() => {
+    setCanvasWidthInput(String(graph.canvas?.width ?? 1920));
+    setCanvasHeightInput(String(graph.canvas?.height ?? 1080));
+  }, [graph.canvas?.width, graph.canvas?.height]);
 
   // Google Drive state
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -540,22 +548,29 @@ export function TopToolbar() {
           {/* Canvas size */}
           <div className="flex items-center gap-1 px-2 py-1 bg-editor-surface-light/50 border border-editor-border rounded-lg text-xs text-editor-text-secondary">
             <input
-              type="number"
-              value={graph.canvas?.width ?? 1920}
-              onChange={(e) => {
-                const newWidth = parseInt(e.target.value) || 1920;
+              type="text"
+              value={canvasWidthInput}
+              onChange={(e) => setCanvasWidthInput(e.target.value)}
+              onBlur={() => {
+                const newWidth = Math.max(1, Math.min(8192, parseInt(canvasWidthInput) || 1920));
                 const currentWidth = graph.canvas?.width ?? 1920;
                 const currentHeight = graph.canvas?.height ?? 1080;
                 if (canvasLocked && currentWidth > 0) {
                   const ratio = currentHeight / currentWidth;
-                  setCanvas(newWidth, Math.round(newWidth * ratio));
+                  const newHeight = Math.round(newWidth * ratio);
+                  setCanvas(newWidth, newHeight);
+                  setCanvasHeightInput(String(newHeight));
                 } else {
                   setCanvas(newWidth, currentHeight);
                 }
+                setCanvasWidthInput(String(newWidth));
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  (e.target as HTMLInputElement).blur();
+                }
               }}
               className="w-12 bg-transparent text-center focus:outline-none focus:text-editor-text"
-              min={1}
-              max={8192}
             />
             <button
               onClick={() => setCanvasLocked(!canvasLocked)}
@@ -577,22 +592,29 @@ export function TopToolbar() {
               )}
             </button>
             <input
-              type="number"
-              value={graph.canvas?.height ?? 1080}
-              onChange={(e) => {
-                const newHeight = parseInt(e.target.value) || 1080;
+              type="text"
+              value={canvasHeightInput}
+              onChange={(e) => setCanvasHeightInput(e.target.value)}
+              onBlur={() => {
+                const newHeight = Math.max(1, Math.min(8192, parseInt(canvasHeightInput) || 1080));
                 const currentWidth = graph.canvas?.width ?? 1920;
                 const currentHeight = graph.canvas?.height ?? 1080;
                 if (canvasLocked && currentHeight > 0) {
                   const ratio = currentWidth / currentHeight;
-                  setCanvas(Math.round(newHeight * ratio), newHeight);
+                  const newWidth = Math.round(newHeight * ratio);
+                  setCanvas(newWidth, newHeight);
+                  setCanvasWidthInput(String(newWidth));
                 } else {
                   setCanvas(currentWidth, newHeight);
                 }
+                setCanvasHeightInput(String(newHeight));
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  (e.target as HTMLInputElement).blur();
+                }
               }}
               className="w-12 bg-transparent text-center focus:outline-none focus:text-editor-text"
-              min={1}
-              max={8192}
             />
           </div>
 
