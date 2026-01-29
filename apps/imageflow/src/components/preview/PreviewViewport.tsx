@@ -1,8 +1,9 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useExecutionStore, useUiStore, useGraphStore } from '../../store';
 import { isFloatImage, floatToImageData, isGPUTexture } from '../../types/data';
 import type { GPUTexture } from '../../types/gpu';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
+import { GizmoOverlay } from './GizmoOverlay';
 
 const PREVIEW_SLOT_COLORS = ['#ef4444', '#22c55e', '#3b82f6']; // Red, Green, Blue for slots 1, 2, 3
 
@@ -71,6 +72,35 @@ export function PreviewViewport() {
   // Slot 2 (display "3") = background, Slots 0-1 (display "1"/"2") = foreground
   const backgroundNodeId = previewBackgroundActive ? previewSlots[2] : null;
   const foregroundNodeId = previewForegroundSlot !== null ? previewSlots[previewForegroundSlot] : null;
+
+  // Get selected nodes and graph for gizmo detection
+  const { selectedNodeIds, graph } = useGraphStore();
+
+  // Determine which node should show a gizmo (if any)
+  // Show gizmo for a selected node that is in a preview slot and has a gizmo definition
+  const gizmoNode = useMemo(() => {
+    // Check if any selected node is in a preview slot
+    const selectedArray = Array.from(selectedNodeIds);
+    for (const nodeId of selectedArray) {
+      const isInSlot = previewSlots.includes(nodeId);
+      if (isInSlot) {
+        const node = graph.nodes[nodeId];
+        if (node) {
+          const def = NodeRegistry.get(node.type);
+          if (def?.gizmo) {
+            console.log('[Gizmo] Showing gizmo for node:', node.type, nodeId);
+            return { node, gizmo: def.gizmo };
+          } else {
+            console.log('[Gizmo] Node has no gizmo definition:', node.type);
+          }
+        }
+      }
+    }
+    if (selectedArray.length > 0) {
+      console.log('[Gizmo] Selected nodes not in preview slots:', selectedArray, 'slots:', previewSlots);
+    }
+    return null;
+  }, [selectedNodeIds, previewSlots, graph.nodes]);
 
   // After mount / refresh, ensure outputs exist for active preview slots
   const hasCheckedOutputs = useRef(false);
@@ -563,7 +593,7 @@ export function PreviewViewport() {
       {/* Canvas container */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden flex items-center justify-center"
+        className="flex-1 overflow-hidden flex items-center justify-center relative"
         style={{
           cursor: isDraggingSplitter
             ? (previewSplitVertical ? 'col-resize' : 'row-resize')
@@ -588,6 +618,20 @@ export function PreviewViewport() {
             style={{ imageRendering: zoom > 2 ? 'pixelated' : 'auto' }}
           />
         </div>
+
+        {/* Gizmo overlay for interactive node controls */}
+        {gizmoNode && imageInfo && (
+          <GizmoOverlay
+            node={gizmoNode.node}
+            gizmo={gizmoNode.gizmo}
+            imageWidth={imageInfo.width}
+            imageHeight={imageInfo.height}
+            zoom={zoom}
+            pan={pan}
+            containerRef={containerRef}
+            canvasRef={canvasRef}
+          />
+        )}
 
         {isExecuting && (
           <div className="absolute inset-0 flex items-center justify-center bg-editor-bg/50">

@@ -35,6 +35,35 @@ export const RampNode = defineNode({
     },
   ],
 
+  // Interactive gizmo for gradient endpoints
+  gizmo: {
+    handles: [
+      {
+        id: 'start',
+        type: 'point',
+        params: ['startX', 'startY'],
+        coordSystem: 'normalized',
+        label: 'Start',
+        color: '#22c55e', // Green
+      },
+      {
+        id: 'end',
+        type: 'point',
+        params: ['endX', 'endY'],
+        coordSystem: 'normalized',
+        label: 'End',
+        color: '#ef4444', // Red
+      },
+      {
+        id: 'gradient-line',
+        type: 'line',
+        params: ['startX', 'startY', 'endX', 'endY'],
+        coordSystem: 'normalized',
+        color: '#ffffff',
+      },
+    ],
+  },
+
   parameters: [
     {
       id: 'mode',

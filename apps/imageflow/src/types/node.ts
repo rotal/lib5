@@ -109,6 +109,50 @@ export type NodeExecuteFunction = (
 ) => Promise<Record<string, PortValue>>;
 
 /**
+ * Gizmo handle types for interactive preview overlays
+ */
+export type GizmoHandleType = 'point' | 'line' | 'circle' | 'box';
+
+/**
+ * Defines a single interactive handle in the gizmo
+ */
+export interface GizmoHandle {
+  /** Unique identifier for this handle */
+  id: string;
+  /** Type of handle to render */
+  type: GizmoHandleType;
+  /** Parameter IDs that this handle controls (e.g., ['offsetX', 'offsetY'] for a point) */
+  params: string[];
+  /** How to interpret the parameter values */
+  coordSystem: 'normalized' | 'pixels' | 'percent';
+  /** Optional label shown on hover */
+  label?: string;
+  /** Handle color (default: blue) */
+  color?: string;
+}
+
+/**
+ * Gizmo definition for interactive preview overlays.
+ * Each node type can define its own gizmo with custom handles.
+ */
+export interface GizmoDefinition {
+  /** List of interactive handles */
+  handles: GizmoHandle[];
+  /** Whether to show a bounding box (for transform nodes) */
+  showBoundingBox?: boolean;
+  /** Whether to show rotation handle (requires pivot point) */
+  showRotation?: boolean;
+  /** Parameter ID for rotation angle (if showRotation is true) */
+  rotationParam?: string;
+  /** Parameter IDs for pivot point [x, y] (used for rotation center) */
+  pivotParams?: [string, string];
+  /** Parameter IDs for scale [x, y] (for corner handles) */
+  scaleParams?: [string, string];
+  /** Whether scale should be uniform */
+  uniformScaleParam?: string;
+}
+
+/**
  * Complete node type definition
  */
 export interface NodeDefinition {
@@ -123,6 +167,8 @@ export interface NodeDefinition {
   execute: NodeExecuteFunction;
   /** If true, node only executes on slider release, not during drag (for CPU-intensive nodes) */
   heavyCompute?: boolean;
+  /** Gizmo definition for interactive preview overlay */
+  gizmo?: GizmoDefinition;
 }
 
 /**

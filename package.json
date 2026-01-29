@@ -6,9 +6,10 @@
     "dev": "npm run dev -w imageflow",
     "dev:imageflow": "npm run dev -w imageflow",
     "dev:pdfedit": "npm run dev -w pdfedit",
-    "build": "npm run build -w imageflow",
+    "build": "npm run build:imageflow && npm run build:pdfedit && npm run build:landing",
     "build:imageflow": "npm run build -w imageflow",
     "build:pdfedit": "npm run build -w pdfedit",
+    "build:landing": "node -e \"require('fs').cpSync('public', 'dist', {recursive: true})\"",
     "preview": "npm run preview -w imageflow",
     "preview:pdfedit": "npm run preview -w pdfedit"
   }

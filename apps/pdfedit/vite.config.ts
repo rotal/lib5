@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  base: '/pdfedit/',
   server: {
     port: 3001,
     host: true,
@@ -10,5 +11,7 @@ export default defineConfig({
   build: {
     target: 'esnext',
     sourcemap: true,
+    outDir: '../../dist/pdfedit',
+    emptyOutDir: true,
   },
 });

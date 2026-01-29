@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  base: '/imageflow/',
   server: {
     port: 3000,
     host: true,
@@ -14,5 +15,7 @@ export default defineConfig({
   build: {
     target: 'esnext',
     sourcemap: true,
+    outDir: '../../dist/imageflow',
+    emptyOutDir: true,
   },
 });

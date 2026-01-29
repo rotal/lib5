@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>lib5</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0a0a0a;
+      color: #e5e5e5;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 3rem;
+      font-weight: 300;
+      margin-bottom: 3rem;
+      color: #fff;
+    }
+    .apps {
+      display: flex;
+      gap: 2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .app-card {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 12px;
+      padding: 2rem;
+      width: 280px;
+      text-decoration: none;
+      color: inherit;
+      transition: all 0.2s ease;
+    }
+    .app-card:hover {
+      border-color: #555;
+      transform: translateY(-4px);
+      background: #222;
+    }
+    .app-card h2 {
+      font-size: 1.5rem;
+      margin-bottom: 0.75rem;
+      color: #fff;
+    }
+    .app-card p {
+      color: #888;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <h1>lib5</h1>
+  <div class="apps">
+    <a href="/imageflow/" class="app-card">
+      <h2>ImageFlow</h2>
+      <p>Node-based image processing with GPU acceleration. Create visual effects with a graph editor.</p>
+    </a>
+    <a href="/pdfedit/" class="app-card">
+      <h2>PDF Editor</h2>
+      <p>Edit, merge, and manipulate PDF documents directly in your browser.</p>
+    </a>
+  </div>
+</body>
+</html>
