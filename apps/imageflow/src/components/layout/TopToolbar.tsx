@@ -83,8 +83,37 @@ export function TopToolbar() {
   const [canvasLocked, setCanvasLocked] = useState(false); // Lock aspect ratio
   const [canvasWidthInput, setCanvasWidthInput] = useState(String(graph.canvas?.width ?? 1920));
   const [canvasHeightInput, setCanvasHeightInput] = useState(String(graph.canvas?.height ?? 1080));
+  const [widthDropdownOpen, setWidthDropdownOpen] = useState(false);
+  const [heightDropdownOpen, setHeightDropdownOpen] = useState(false);
+  const [ratioDropdownOpen, setRatioDropdownOpen] = useState(false);
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const widthDropdownRef = useRef<HTMLDivElement>(null);
+  const heightDropdownRef = useRef<HTMLDivElement>(null);
+  const ratioDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Popular resolution presets
+  const resolutionPresets = [
+    { label: '256', value: 256 },
+    { label: '512', value: 512 },
+    { label: '1K', value: 1024 },
+    { label: '1920', value: 1920 },
+    { label: '2K', value: 2048 },
+    { label: '4K', value: 4096 },
+    { label: '8K', value: 8192 },
+  ];
+
+  // Aspect ratio presets
+  const aspectRatioPresets = [
+    { label: '1:1', width: 1, height: 1 },
+    { label: '4:3', width: 4, height: 3 },
+    { label: '16:9', width: 16, height: 9 },
+    { label: '16:10', width: 16, height: 10 },
+    { label: '21:9', width: 21, height: 9 },
+    { label: '3:2', width: 3, height: 2 },
+    { label: '2:3', width: 2, height: 3 },
+    { label: '9:16', width: 9, height: 16 },
+  ];
 
   // Sync local canvas inputs when graph canvas changes externally
   useEffect(() => {
@@ -313,7 +342,7 @@ export function TopToolbar() {
 
   // Close menus on click outside
   useEffect(() => {
-    if (!mobileMenuOpen && !fileMenuOpen) return;
+    if (!mobileMenuOpen && !fileMenuOpen && !widthDropdownOpen && !heightDropdownOpen && !ratioDropdownOpen) return;
 
     const handleClickOutside = (e: MouseEvent) => {
       if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
@@ -322,11 +351,66 @@ export function TopToolbar() {
       if (fileMenuRef.current && !fileMenuRef.current.contains(e.target as Node)) {
         setFileMenuOpen(false);
       }
+      if (widthDropdownRef.current && !widthDropdownRef.current.contains(e.target as Node)) {
+        setWidthDropdownOpen(false);
+      }
+      if (heightDropdownRef.current && !heightDropdownRef.current.contains(e.target as Node)) {
+        setHeightDropdownOpen(false);
+      }
+      if (ratioDropdownRef.current && !ratioDropdownRef.current.contains(e.target as Node)) {
+        setRatioDropdownOpen(false);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [mobileMenuOpen, fileMenuOpen]);
+  }, [mobileMenuOpen, fileMenuOpen, widthDropdownOpen, heightDropdownOpen, ratioDropdownOpen]);
+
+  // Handle width preset selection
+  const handleWidthPreset = useCallback((width: number) => {
+    const currentHeight = graph.canvas?.height ?? 1080;
+    if (canvasLocked) {
+      const currentWidth = graph.canvas?.width ?? 1920;
+      const ratio = currentHeight / currentWidth;
+      const newHeight = Math.round(width * ratio);
+      setCanvas(width, newHeight);
+      setCanvasWidthInput(String(width));
+      setCanvasHeightInput(String(newHeight));
+    } else {
+      setCanvas(width, currentHeight);
+      setCanvasWidthInput(String(width));
+    }
+    setWidthDropdownOpen(false);
+  }, [graph.canvas, canvasLocked, setCanvas]);
+
+  // Handle height preset selection
+  const handleHeightPreset = useCallback((height: number) => {
+    const currentWidth = graph.canvas?.width ?? 1920;
+    if (canvasLocked) {
+      const currentHeight = graph.canvas?.height ?? 1080;
+      const ratio = currentWidth / currentHeight;
+      const newWidth = Math.round(height * ratio);
+      setCanvas(newWidth, height);
+      setCanvasWidthInput(String(newWidth));
+      setCanvasHeightInput(String(height));
+    } else {
+      setCanvas(currentWidth, height);
+      setCanvasHeightInput(String(height));
+    }
+    setHeightDropdownOpen(false);
+  }, [graph.canvas, canvasLocked, setCanvas]);
+
+  // Handle aspect ratio preset selection
+  const handleAspectRatioPreset = useCallback((ratioWidth: number, ratioHeight: number) => {
+    const currentWidth = graph.canvas?.width ?? 1920;
+    // Keep current width, adjust height to match aspect ratio
+    const newHeight = Math.round(currentWidth * ratioHeight / ratioWidth);
+    setCanvas(currentWidth, newHeight);
+    setCanvasWidthInput(String(currentWidth));
+    setCanvasHeightInput(String(newHeight));
+    setCanvasLocked(true);
+    setRatioDropdownOpen(false);
+  }, [graph.canvas, setCanvas]);
 
   // View mode toggle
   const ViewModeToggle = () => (
@@ -506,33 +590,13 @@ export function TopToolbar() {
           <div className="w-px h-5 bg-editor-border mx-1" />
 
           {/* Execute */}
-          <Button variant="primary" size="sm" onClick={handleExecute} disabled={isExecuting}>
+          <Button variant="primary" size="sm" onClick={handleExecute} disabled={isExecuting} title="Execute graph">
             {isExecuting ? (
-              <>
-                <div className="w-3 h-3 spinner" />
-                Running...
-              </>
+              <div className="w-4 h-4 spinner" />
             ) : (
-              <>
-                <PlayIcon />
-                Execute
-              </>
+              <PlayIcon />
             )}
           </Button>
-
-          {/* Live toggle */}
-          <button
-            onClick={handleToggleLiveEdit}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 flex items-center gap-1.5 ${
-              liveEdit
-                ? 'bg-editor-success text-white shadow-sm'
-                : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text border border-editor-border'
-            }`}
-            title="Auto-execute on changes"
-          >
-            <LiveIcon />
-            Live
-          </button>
 
           <div className="flex-1" />
 
@@ -541,43 +605,107 @@ export function TopToolbar() {
             type="text"
             value={graph.name}
             onChange={(e) => setGraphName(e.target.value)}
-            className="px-3 py-1.5 bg-editor-surface-light/50 border border-editor-border rounded-lg text-sm text-editor-text text-center focus:outline-none focus:border-editor-accent focus:ring-2 focus:ring-editor-accent/20 transition-all w-[180px]"
+            className="h-7 px-3 bg-editor-surface-light/50 border border-editor-border rounded-lg text-sm text-editor-text text-center focus:outline-none focus:border-editor-accent focus:ring-2 focus:ring-editor-accent/20 transition-all w-[180px]"
             placeholder="Project name"
           />
 
           {/* Canvas size */}
-          <div className="flex items-center gap-1 px-2 py-1 bg-editor-surface-light/50 border border-editor-border rounded-lg text-xs text-editor-text-secondary">
-            <input
-              type="text"
-              value={canvasWidthInput}
-              onChange={(e) => setCanvasWidthInput(e.target.value)}
-              onBlur={() => {
-                const newWidth = Math.max(1, Math.min(8192, parseInt(canvasWidthInput) || 1920));
-                const currentWidth = graph.canvas?.width ?? 1920;
-                const currentHeight = graph.canvas?.height ?? 1080;
-                if (canvasLocked && currentWidth > 0) {
-                  const ratio = currentHeight / currentWidth;
-                  const newHeight = Math.round(newWidth * ratio);
-                  setCanvas(newWidth, newHeight);
-                  setCanvasHeightInput(String(newHeight));
-                } else {
-                  setCanvas(newWidth, currentHeight);
-                }
-                setCanvasWidthInput(String(newWidth));
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-              className="w-12 bg-transparent text-center focus:outline-none focus:text-editor-text"
-            />
+          <div className="flex items-center gap-1 text-sm text-editor-text-secondary">
+            {/* Aspect ratio dropdown */}
+            <div className="relative" ref={ratioDropdownRef}>
+              <button
+                onClick={() => setRatioDropdownOpen(!ratioDropdownOpen)}
+                className="h-7 px-2 bg-editor-surface-light/50 border border-editor-border rounded-lg hover:bg-editor-surface-light transition-colors flex items-center gap-1"
+                title="Aspect ratio presets"
+              >
+                {(() => {
+                  const w = graph.canvas?.width ?? 1920;
+                  const h = graph.canvas?.height ?? 1080;
+                  const maxSize = 14;
+                  const ratio = w / h;
+                  const rectW = ratio >= 1 ? maxSize : Math.round(maxSize * ratio);
+                  const rectH = ratio <= 1 ? maxSize : Math.round(maxSize / ratio);
+                  const x = (maxSize - rectW) / 2;
+                  const y = (maxSize - rectH) / 2;
+                  return (
+                    <svg className="w-3.5 h-3.5" viewBox={`0 0 ${maxSize} ${maxSize}`} fill="none" stroke="currentColor" strokeWidth={1.5}>
+                      <rect x={x} y={y} width={rectW} height={rectH} rx={1} />
+                    </svg>
+                  );
+                })()}
+                <ChevronDownIcon />
+              </button>
+              {ratioDropdownOpen && (
+                <div className="dropdown-menu absolute top-full left-0 mt-1 z-50 min-w-[80px]">
+                  {aspectRatioPresets.map((preset) => (
+                    <button
+                      key={preset.label}
+                      className="dropdown-item w-full text-left"
+                      onClick={() => handleAspectRatioPreset(preset.width, preset.height)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Width input with dropdown */}
+            <div className="relative flex items-center" ref={widthDropdownRef}>
+              <input
+                type="text"
+                value={canvasWidthInput}
+                onChange={(e) => setCanvasWidthInput(e.target.value)}
+                onBlur={() => {
+                  const newWidth = Math.max(1, Math.min(8192, parseInt(canvasWidthInput) || 1920));
+                  const currentWidth = graph.canvas?.width ?? 1920;
+                  const currentHeight = graph.canvas?.height ?? 1080;
+                  if (canvasLocked && currentWidth > 0) {
+                    const ratio = currentHeight / currentWidth;
+                    const newHeight = Math.round(newWidth * ratio);
+                    setCanvas(newWidth, newHeight);
+                    setCanvasHeightInput(String(newHeight));
+                  } else {
+                    setCanvas(newWidth, currentHeight);
+                  }
+                  setCanvasWidthInput(String(newWidth));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                className="w-14 h-7 px-2 bg-editor-surface-light/50 border border-editor-border rounded-l-lg text-center focus:outline-none focus:text-editor-text focus:border-editor-accent"
+              />
+              <button
+                onClick={() => setWidthDropdownOpen(!widthDropdownOpen)}
+                className="h-7 px-1.5 bg-editor-surface-light/50 border border-l-0 border-editor-border rounded-r-lg hover:bg-editor-surface-light transition-colors flex items-center"
+                title="Width presets"
+              >
+                <ChevronDownIcon />
+              </button>
+              {widthDropdownOpen && (
+                <div className="dropdown-menu absolute top-full left-0 mt-1 z-50 min-w-[70px]">
+                  {resolutionPresets.map((preset) => (
+                    <button
+                      key={preset.value}
+                      className="dropdown-item w-full text-left"
+                      onClick={() => handleWidthPreset(preset.value)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Lock button */}
             <button
               onClick={() => setCanvasLocked(!canvasLocked)}
-              className={`p-0.5 rounded transition-colors ${
+              className={`h-7 w-7 flex items-center justify-center rounded-lg transition-colors ${
                 canvasLocked
-                  ? 'text-editor-accent'
-                  : 'text-editor-text-dim hover:text-editor-text'
+                  ? 'bg-editor-accent/20 text-editor-accent'
+                  : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light'
               }`}
               title={canvasLocked ? 'Unlock aspect ratio' : 'Lock aspect ratio'}
             >
@@ -591,31 +719,55 @@ export function TopToolbar() {
                 </svg>
               )}
             </button>
-            <input
-              type="text"
-              value={canvasHeightInput}
-              onChange={(e) => setCanvasHeightInput(e.target.value)}
-              onBlur={() => {
-                const newHeight = Math.max(1, Math.min(8192, parseInt(canvasHeightInput) || 1080));
-                const currentWidth = graph.canvas?.width ?? 1920;
-                const currentHeight = graph.canvas?.height ?? 1080;
-                if (canvasLocked && currentHeight > 0) {
-                  const ratio = currentWidth / currentHeight;
-                  const newWidth = Math.round(newHeight * ratio);
-                  setCanvas(newWidth, newHeight);
-                  setCanvasWidthInput(String(newWidth));
-                } else {
-                  setCanvas(currentWidth, newHeight);
-                }
-                setCanvasHeightInput(String(newHeight));
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  (e.target as HTMLInputElement).blur();
-                }
-              }}
-              className="w-12 bg-transparent text-center focus:outline-none focus:text-editor-text"
-            />
+
+            {/* Height input with dropdown */}
+            <div className="relative flex items-center" ref={heightDropdownRef}>
+              <input
+                type="text"
+                value={canvasHeightInput}
+                onChange={(e) => setCanvasHeightInput(e.target.value)}
+                onBlur={() => {
+                  const newHeight = Math.max(1, Math.min(8192, parseInt(canvasHeightInput) || 1080));
+                  const currentWidth = graph.canvas?.width ?? 1920;
+                  const currentHeight = graph.canvas?.height ?? 1080;
+                  if (canvasLocked && currentHeight > 0) {
+                    const ratio = currentWidth / currentHeight;
+                    const newWidth = Math.round(newHeight * ratio);
+                    setCanvas(newWidth, newHeight);
+                    setCanvasWidthInput(String(newWidth));
+                  } else {
+                    setCanvas(currentWidth, newHeight);
+                  }
+                  setCanvasHeightInput(String(newHeight));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    (e.target as HTMLInputElement).blur();
+                  }
+                }}
+                className="w-14 h-7 px-2 bg-editor-surface-light/50 border border-editor-border rounded-l-lg text-center focus:outline-none focus:text-editor-text focus:border-editor-accent"
+              />
+              <button
+                onClick={() => setHeightDropdownOpen(!heightDropdownOpen)}
+                className="h-7 px-1.5 bg-editor-surface-light/50 border border-l-0 border-editor-border rounded-r-lg hover:bg-editor-surface-light transition-colors flex items-center"
+                title="Height presets"
+              >
+                <ChevronDownIcon />
+              </button>
+              {heightDropdownOpen && (
+                <div className="dropdown-menu absolute top-full left-0 mt-1 z-50 min-w-[70px]">
+                  {resolutionPresets.map((preset) => (
+                    <button
+                      key={preset.value}
+                      className="dropdown-item w-full text-left"
+                      onClick={() => handleHeightPreset(preset.value)}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="flex-1" />

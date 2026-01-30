@@ -348,6 +348,12 @@ export function PreviewViewport() {
     canvas.width = width;
     canvas.height = height;
 
+    // Enable high-quality image smoothing for antialiasing
+    // Only disable at very high zoom for pixel-perfect viewing
+    const usePixelated = zoom > 4;
+    ctx.imageSmoothingEnabled = !usePixelated;
+    ctx.imageSmoothingQuality = 'high';
+
     // Clear with transparent (container background shows through)
     ctx.clearRect(0, 0, width, height);
 
@@ -775,55 +781,6 @@ export function PreviewViewport() {
           >
             {previewBgMode === 'grid' ? '▦' : '■'}
           </button>
-          {/* Gizmo tool buttons (Maya-style Q/W/E/R) */}
-          {gizmoNode && (
-            <div className="flex items-center gap-0.5 ml-1">
-              <button
-                onClick={() => { setGizmoMode('pivot'); setGizmoVisibility('translate'); }}
-                className={`w-5 h-5 text-xs rounded transition-colors ${
-                  gizmoMode === 'pivot'
-                    ? 'bg-orange-500/50 text-orange-200'
-                    : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
-                }`}
-                title="Pivot tool (Q)"
-              >
-                Q
-              </button>
-              <button
-                onClick={() => { setGizmoMode('translate'); setGizmoVisibility('translate'); }}
-                className={`w-5 h-5 text-xs rounded transition-colors ${
-                  gizmoMode === 'translate' && gizmoVisibility === 'translate'
-                    ? 'bg-blue-500/50 text-blue-200'
-                    : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
-                }`}
-                title="Move tool (W)"
-              >
-                W
-              </button>
-              <button
-                onClick={() => { setGizmoMode('translate'); setGizmoVisibility('rotate'); }}
-                className={`w-5 h-5 text-xs rounded transition-colors ${
-                  gizmoVisibility === 'rotate'
-                    ? 'bg-green-500/50 text-green-200'
-                    : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
-                }`}
-                title="Rotate tool (E)"
-              >
-                E
-              </button>
-              <button
-                onClick={() => { setGizmoMode('translate'); setGizmoVisibility('scale'); }}
-                className={`w-5 h-5 text-xs rounded transition-colors ${
-                  gizmoVisibility === 'scale'
-                    ? 'bg-yellow-500/50 text-yellow-200'
-                    : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
-                }`}
-                title="Scale tool (R)"
-              >
-                R
-              </button>
-            </div>
-          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -877,7 +834,7 @@ export function PreviewViewport() {
         <canvas
           ref={canvasRef}
           className="absolute inset-0 w-full h-full"
-          style={{ imageRendering: zoom > 2 ? 'pixelated' : 'auto' }}
+          style={{ imageRendering: zoom > 4 ? 'pixelated' : 'auto' }}
         />
 
         {/* Gizmo overlay for interactive node controls */}
