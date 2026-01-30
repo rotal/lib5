@@ -1,6 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useGraph } from './useGraph';
-import { useGraphStore } from '../store';
+import { useGraphStore, useUiStore } from '../store';
 
 /**
  * Hook for keyboard shortcuts
@@ -19,6 +19,7 @@ export function useKeyboard() {
   } = useGraph();
 
   const toggleAllPreviews = useGraphStore((s) => s.toggleAllPreviews);
+  const toggleBottomPanel = useUiStore((s) => s.toggleBottomPanel);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     // Don't handle shortcuts when typing in inputs
@@ -94,7 +95,14 @@ export function useKeyboard() {
       toggleAllPreviews();
       return;
     }
-  }, [undo, redo, copy, cut, paste, selectAll, deleteSelection, canUndo, canRedo, toggleAllPreviews]);
+
+    // Backtick: Toggle bottom code panel
+    if (e.key === '`' && !cmdOrCtrl && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      toggleBottomPanel();
+      return;
+    }
+  }, [undo, redo, copy, cut, paste, selectAll, deleteSelection, canUndo, canRedo, toggleAllPreviews, toggleBottomPanel]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);

@@ -422,7 +422,7 @@ export function TopToolbar() {
   // View mode toggle
   const ViewModeToggle = () => (
     <div className="flex items-center bg-editor-surface-solid rounded-lg p-0.5 border border-editor-border">
-      {(['graph', 'split', 'preview', 'code'] as const).map((mode) => (
+      {(['graph', 'split', 'preview'] as const).map((mode) => (
         <button
           key={mode}
           onClick={() => setViewMode(mode)}

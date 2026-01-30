@@ -5,7 +5,7 @@ import { TopToolbar } from './TopToolbar';
 import { GraphCanvas, NodePalette } from '../graph';
 import { PropertiesPanel } from '../properties';
 import { PreviewViewport } from '../preview';
-import { CodeView } from '../code';
+import { CodeView, BottomCodePanel } from '../code';
 import { SettingsView } from '../settings';
 import { ToastContainer } from '../ui';
 import { MobileBottomNav, MobileBottomSheet } from '../mobile';
@@ -174,11 +174,9 @@ export function AppLayout() {
         />
 
         {/* Main content area */}
-        <div className="flex-1 flex overflow-hidden min-w-0">
+        <div className="flex-1 flex overflow-hidden min-w-0 relative">
           {viewMode === 'settings' ? (
             <SettingsView />
-          ) : viewMode === 'code' ? (
-            <CodeView />
           ) : viewMode === 'split' ? (
             <>
               {/* Graph canvas */}
@@ -201,6 +199,9 @@ export function AppLayout() {
           ) : (
             <GraphCanvas />
           )}
+
+          {/* Bottom code panel (floating) */}
+          {viewMode !== 'settings' && <BottomCodePanel />}
         </div>
 
         {/* Right panel toggle */}
