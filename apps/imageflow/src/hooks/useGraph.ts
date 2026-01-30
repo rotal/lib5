@@ -156,6 +156,28 @@ export function useGraph() {
     }
   }, [graphStore, uiStore.liveEdit]);
 
+  // Batch update multiple parameters atomically (triggers execution once after all updates)
+  const batchUpdateNodeParameters = useCallback((
+    nodeId: string,
+    updates: Record<string, unknown>
+  ) => {
+    // Update all parameters directly in the store (no execution trigger per update)
+    for (const [paramId, value] of Object.entries(updates)) {
+      graphStore.updateNodeParameter(nodeId, paramId, value);
+    }
+
+    // Trigger execution once with all updates applied
+    const freshGraph = useGraphStore.getState().graph;
+    const exec = useExecutionStore.getState();
+    const dirtyNodes = [nodeId, ...getDownstreamNodes(freshGraph, nodeId)];
+    exec.markNodesDirty(dirtyNodes);
+
+    if (uiStore.liveEdit && !exec.isExecuting) {
+      exec.updateEngineGraph(freshGraph);
+      exec.execute();
+    }
+  }, [graphStore, uiStore.liveEdit]);
+
   // Save parameter change to history (debounced, called on mouse up)
   // Also triggers auto-execute
   const commitParameterChange = useCallback((_nodeId: string, paramId: string) => {
@@ -270,6 +292,7 @@ export function useGraph() {
     moveNode,
     commitNodeMove,
     updateNodeParameter,
+    batchUpdateNodeParameters,
     commitParameterChange,
 
     // Edge operations

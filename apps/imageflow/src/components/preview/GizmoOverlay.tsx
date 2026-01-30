@@ -1,7 +1,5 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useGraph } from '../../hooks/useGraph';
-import { useGraphStore, useExecutionStore, useUiStore } from '../../store';
-import { getDownstreamNodes } from '../../core/graph/TopologicalSort';
 import type { GizmoDefinition, GizmoHandle, NodeInstance } from '../../types/node';
 
 interface GizmoOverlayProps {
@@ -62,7 +60,7 @@ export function GizmoOverlay({
   gizmoVisibility,
   onDragChange,
 }: GizmoOverlayProps) {
-  const { updateNodeParameter, commitParameterChange } = useGraph();
+  const { updateNodeParameter, batchUpdateNodeParameters, commitParameterChange } = useGraph();
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
   const [shiftHeld, setShiftHeld] = useState(false);
@@ -505,32 +503,17 @@ export function GizmoOverlay({
           const newOffsetX = startOffsetX + dpx - rsDpx;
           const newOffsetY = startOffsetY + dpy - rsDpy;
 
-          // BATCH UPDATE: Update all parameters in the store first, then trigger execution once.
-          // Using updateNodeParameter for each would trigger execution on the first call,
-          // before other parameters are updated, causing incorrect rendering.
-          const graphStore = useGraphStore.getState();
-
-          // Update all parameters directly in the store (no execution trigger)
+          // Batch update all parameters atomically to avoid race condition
+          const updates: Record<string, number> = {};
           if (Number.isFinite(newPivotX) && Number.isFinite(newPivotY)) {
-            if (axis !== 'y') graphStore.updateNodeParameter(node.id, pivotXParam, newPivotX);
-            if (axis !== 'x') graphStore.updateNodeParameter(node.id, pivotYParam, newPivotY);
+            if (axis !== 'y') updates[pivotXParam] = newPivotX;
+            if (axis !== 'x') updates[pivotYParam] = newPivotY;
           }
           if (Number.isFinite(newOffsetX) && Number.isFinite(newOffsetY)) {
-            graphStore.updateNodeParameter(node.id, offsetXParam, newOffsetX);
-            graphStore.updateNodeParameter(node.id, offsetYParam, newOffsetY);
+            updates[offsetXParam] = newOffsetX;
+            updates[offsetYParam] = newOffsetY;
           }
-
-          // Now trigger execution once with all updates applied
-          const freshGraph = useGraphStore.getState().graph;
-          const exec = useExecutionStore.getState();
-          const uiStore = useUiStore.getState();
-          const dirtyNodes = [node.id, ...getDownstreamNodes(freshGraph, node.id)];
-          exec.markNodesDirty(dirtyNodes);
-
-          if (uiStore.liveEdit && !exec.isExecuting) {
-            exec.updateEngineGraph(freshGraph);
-            exec.execute();
-          }
+          batchUpdateNodeParameters(node.id, updates);
         } else {
           // No translateParams - just update pivot using normal method
           if (Number.isFinite(newPivotX) && Number.isFinite(newPivotY)) {
@@ -714,6 +697,7 @@ export function GizmoOverlay({
     imageToScreen,
     getPivotPosition,
     updateNodeParameter,
+    batchUpdateNodeParameters,
     commitParameterChange,
     containerRef,
     shiftHeld,
