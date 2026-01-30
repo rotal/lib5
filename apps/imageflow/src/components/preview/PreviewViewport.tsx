@@ -900,25 +900,37 @@ export function PreviewViewport() {
 
         {/* Keyboard shortcuts HUD */}
         {gizmoNode && (
-          <div className="absolute bottom-3 left-3 pointer-events-none">
+          <div className="absolute bottom-3 left-3">
             <div className="bg-black/40 backdrop-blur-sm rounded-lg px-3 py-2 text-xs">
               <div className="flex gap-4">
-                <div className={`flex items-center gap-1.5 ${gizmoMode === 'pivot' ? 'text-orange-300' : 'text-white/50'}`}>
+                <button
+                  onClick={() => { setGizmoMode('pivot'); setGizmoVisibility('translate'); }}
+                  className={`flex items-center gap-1.5 ${gizmoMode === 'pivot' ? 'text-orange-300' : 'text-white/50 hover:text-white/80'}`}
+                >
                   <span className={`w-5 h-5 flex items-center justify-center rounded ${gizmoMode === 'pivot' ? 'bg-orange-500/60' : 'bg-white/20'}`}>Q</span>
                   <span>Pivot</span>
-                </div>
-                <div className={`flex items-center gap-1.5 ${gizmoMode === 'translate' && gizmoVisibility === 'translate' ? 'text-blue-300' : 'text-white/50'}`}>
+                </button>
+                <button
+                  onClick={() => { setGizmoMode('translate'); setGizmoVisibility('translate'); }}
+                  className={`flex items-center gap-1.5 ${gizmoMode === 'translate' && gizmoVisibility === 'translate' ? 'text-blue-300' : 'text-white/50 hover:text-white/80'}`}
+                >
                   <span className={`w-5 h-5 flex items-center justify-center rounded ${gizmoMode === 'translate' && gizmoVisibility === 'translate' ? 'bg-blue-500/60' : 'bg-white/20'}`}>W</span>
                   <span>Move</span>
-                </div>
-                <div className={`flex items-center gap-1.5 ${gizmoVisibility === 'rotate' ? 'text-green-300' : 'text-white/50'}`}>
+                </button>
+                <button
+                  onClick={() => { setGizmoMode('translate'); setGizmoVisibility('rotate'); }}
+                  className={`flex items-center gap-1.5 ${gizmoVisibility === 'rotate' ? 'text-green-300' : 'text-white/50 hover:text-white/80'}`}
+                >
                   <span className={`w-5 h-5 flex items-center justify-center rounded ${gizmoVisibility === 'rotate' ? 'bg-green-500/60' : 'bg-white/20'}`}>E</span>
                   <span>Rotate</span>
-                </div>
-                <div className={`flex items-center gap-1.5 ${gizmoVisibility === 'scale' ? 'text-yellow-300' : 'text-white/50'}`}>
+                </button>
+                <button
+                  onClick={() => { setGizmoMode('translate'); setGizmoVisibility('scale'); }}
+                  className={`flex items-center gap-1.5 ${gizmoVisibility === 'scale' ? 'text-yellow-300' : 'text-white/50 hover:text-white/80'}`}
+                >
                   <span className={`w-5 h-5 flex items-center justify-center rounded ${gizmoVisibility === 'scale' ? 'bg-yellow-500/60' : 'bg-white/20'}`}>R</span>
                   <span>Scale</span>
-                </div>
+                </button>
               </div>
             </div>
           </div>

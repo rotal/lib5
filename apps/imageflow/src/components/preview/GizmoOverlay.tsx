@@ -402,8 +402,8 @@ export function GizmoOverlay({
         // xy case: gizmoX/gizmoY already set to currentX/currentY
         setDragState(prev => prev ? { ...prev, currentMouseX: gizmoX, currentMouseY: gizmoY } : null);
       }
-      // Pivot drag - only move the pivot point, image stays unchanged
-      // Pivot is just a reference point for future rotations/scales
+      // Pivot drag - move the pivot point while keeping image visually stationary
+      // We need to compensate the offset to account for the pivot change
       else if (dragState.handleId.startsWith('_pivot_') && gizmo.pivotParams) {
         // Guard against zero dimensions
         if (imageWidth <= 0 || imageHeight <= 0) return;
@@ -411,7 +411,7 @@ export function GizmoOverlay({
         const [pivotXParam, pivotYParam] = gizmo.pivotParams;
         const axis = dragState.handleId.split('_')[2];
 
-        // Get start pivot values
+        // Get start pivot values (normalized 0-1)
         const startPivotX = dragState.startParams[pivotXParam] ?? 0.5;
         const startPivotY = dragState.startParams[pivotYParam] ?? 0.5;
 
@@ -426,13 +426,50 @@ export function GizmoOverlay({
         if (axis === 'x') deltaY = 0;
         if (axis === 'y') deltaX = 0;
 
-        const newPivotX = startPivotX + deltaX;
-        const newPivotY = startPivotY + deltaY;
+        const newPivotX = Math.max(0, Math.min(1, startPivotX + deltaX));
+        const newPivotY = Math.max(0, Math.min(1, startPivotY + deltaY));
 
-        // Update only pivot values - no offset compensation needed
+        // Calculate offset compensation to keep image stationary
+        // When pivot changes, we need: newOffset = oldOffset + (oldPivot - newPivot) - RS*(oldPivot - newPivot)
+        // Where RS is the combined rotation and scale transform
+        if (gizmo.translateParams && gizmo.rotationParam && gizmo.scaleParams) {
+          const [offsetXParam, offsetYParam] = gizmo.translateParams;
+          const [scaleXParam, scaleYParam] = gizmo.scaleParams;
+
+          const startOffsetX = dragState.startParams[offsetXParam] ?? 0;
+          const startOffsetY = dragState.startParams[offsetYParam] ?? 0;
+          const scaleX = (node.parameters[scaleXParam] as number) ?? 1;
+          const scaleY = (node.parameters[scaleYParam] as number) ?? 1;
+          const angleDeg = (node.parameters[gizmo.rotationParam] as number) ?? 0;
+          const angleRad = angleDeg * Math.PI / 180;
+
+          // Pivot delta in pixels
+          const dpx = (startPivotX - newPivotX) * imageWidth;
+          const dpy = (startPivotY - newPivotY) * imageHeight;
+
+          // Apply rotation and scale to the delta: RS * delta
+          const cos = Math.cos(angleRad);
+          const sin = Math.sin(angleRad);
+          const rsDpx = (cos * scaleX * dpx - sin * scaleY * dpy);
+          const rsDpy = (sin * scaleX * dpx + cos * scaleY * dpy);
+
+          // Offset compensation: (oldPivot - newPivot) - RS*(oldPivot - newPivot)
+          const compensationX = dpx - rsDpx;
+          const compensationY = dpy - rsDpy;
+
+          const newOffsetX = startOffsetX + compensationX;
+          const newOffsetY = startOffsetY + compensationY;
+
+          if (Number.isFinite(newOffsetX) && Number.isFinite(newOffsetY)) {
+            updateNodeParameter(node.id, offsetXParam, newOffsetX);
+            updateNodeParameter(node.id, offsetYParam, newOffsetY);
+          }
+        }
+
+        // Update pivot values
         if (Number.isFinite(newPivotX) && Number.isFinite(newPivotY)) {
-          if (axis !== 'y') updateNodeParameter(node.id, pivotXParam, Math.max(0, Math.min(1, newPivotX)));
-          if (axis !== 'x') updateNodeParameter(node.id, pivotYParam, Math.max(0, Math.min(1, newPivotY)));
+          if (axis !== 'y') updateNodeParameter(node.id, pivotXParam, newPivotX);
+          if (axis !== 'x') updateNodeParameter(node.id, pivotYParam, newPivotY);
         }
 
         // Store screen position for visual feedback
