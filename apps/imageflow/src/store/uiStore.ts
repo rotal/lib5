@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { produce } from 'immer';
 
 export type PanelId = 'palette' | 'properties' | 'layers' | 'preview';
-export type ViewMode = 'graph' | 'preview' | 'split';
+export type ViewMode = 'graph' | 'preview' | 'split' | 'code' | 'settings';
 export type Theme = 'dark' | 'light';
 
 interface UiState {

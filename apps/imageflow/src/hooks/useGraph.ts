@@ -7,33 +7,55 @@ import { getDownstreamNodes } from '../core/graph/TopologicalSort';
  */
 export function useGraph() {
   const graphStore = useGraphStore();
-  const executionStore = useExecutionStore();
   const historyStore = useHistoryStore();
   const uiStore = useUiStore();
 
+  // Only subscribe to the specific execution state we need for the return value
+  // Use selectors to avoid re-renders on every callback
+  const isExecuting = useExecutionStore((state) => state.isExecuting);
+  const nodeStates = useExecutionStore((state) => state.nodeStates);
+  const nodeOutputs = useExecutionStore((state) => state.nodeOutputs);
+
   const isInitialized = useRef(false);
+  const lastGraphId = useRef<string | null>(null);
 
   // Initialize execution engine when graph changes
+  // Access store methods directly from module to avoid dependency on changing state
   useEffect(() => {
+    const exec = useExecutionStore.getState();
+    const hist = useHistoryStore.getState();
+    const graph = graphStore.graph;
+
+    // Use graph.id to detect actual graph changes, not reference changes
+    const graphId = graph.id;
+    const graphChanged = graphId !== lastGraphId.current;
+
     if (!isInitialized.current) {
-      executionStore.initEngine(graphStore.graph);
-      historyStore.saveState(graphStore.graph, 'Initial state');
+      exec.initEngine(graph);
+      hist.saveState(graph, 'Initial state');
       isInitialized.current = true;
+      lastGraphId.current = graphId;
 
       // Always execute on load
-      executionStore.execute();
-    } else {
-      executionStore.updateEngineGraph(graphStore.graph);
+      exec.execute();
+    } else if (graphChanged) {
+      // Graph ID changed - this is a real graph change (load/new)
+      exec.updateEngineGraph(graph);
+      lastGraphId.current = graphId;
 
       // Re-execute after graph hydration from persist (graph changed but no outputs yet)
-      if (Object.keys(executionStore.nodeOutputs).length === 0 &&
-          Object.keys(graphStore.graph.nodes).length > 0 &&
-          !executionStore.isExecuting &&
-          !executionStore.executionError) {
-        executionStore.execute();
+      const { nodeOutputs: outputs, isExecuting: executing, executionError } = exec;
+      if (Object.keys(outputs).length === 0 &&
+          Object.keys(graph.nodes).length > 0 &&
+          !executing &&
+          !executionError) {
+        exec.execute();
       }
+    } else {
+      // Same graph ID, just update the engine with latest state
+      exec.updateEngineGraph(graph);
     }
-  }, [graphStore.graph, executionStore, historyStore, uiStore.liveEdit]);
+  }, [graphStore.graph]);
 
   // Add node with history
   const addNode = useCallback((type: string, x: number, y: number) => {
@@ -67,18 +89,19 @@ export function useGraph() {
       historyStore.saveState(freshGraph, 'Connect nodes');
 
       // Mark downstream nodes as dirty and execute
+      const exec = useExecutionStore.getState();
       const dirtyNodes = [targetNodeId, ...getDownstreamNodes(freshGraph, targetNodeId)];
-      executionStore.markNodesDirty(Array.from(dirtyNodes));
+      exec.markNodesDirty(Array.from(dirtyNodes));
 
       // Auto-execute if live edit is enabled
-      if (uiStore.liveEdit && !executionStore.isExecuting) {
+      if (uiStore.liveEdit && !exec.isExecuting) {
         // Ensure engine has the latest graph before executing
-        executionStore.updateEngineGraph(freshGraph);
-        executionStore.execute();
+        exec.updateEngineGraph(freshGraph);
+        exec.execute();
       }
     }
     return edgeId;
-  }, [graphStore, historyStore, executionStore, uiStore.liveEdit]);
+  }, [graphStore, historyStore, uiStore.liveEdit]);
 
   // Remove edges with history
   const removeEdges = useCallback((edgeIds: string[]) => {
@@ -106,9 +129,9 @@ export function useGraph() {
           dirtyNodes.add(downstream);
         }
       }
-      executionStore.markNodesDirty(Array.from(dirtyNodes));
+      useExecutionStore.getState().markNodesDirty(Array.from(dirtyNodes));
     }
-  }, [graphStore, historyStore, executionStore]);
+  }, [graphStore, historyStore]);
 
   // Update node parameter (called during drag)
   const updateNodeParameter = useCallback((
@@ -120,17 +143,18 @@ export function useGraph() {
 
     // Get fresh graph state after update (not stale closure reference)
     const freshGraph = useGraphStore.getState().graph;
+    const exec = useExecutionStore.getState();
 
     // Mark node and downstream as dirty
     const dirtyNodes = [nodeId, ...getDownstreamNodes(freshGraph, nodeId)];
-    executionStore.markNodesDirty(Array.from(dirtyNodes));
+    exec.markNodesDirty(Array.from(dirtyNodes));
 
     // In live mode, execute immediately on parameter change
-    if (uiStore.liveEdit && !executionStore.isExecuting) {
-      executionStore.updateEngineGraph(freshGraph);
-      executionStore.execute();
+    if (uiStore.liveEdit && !exec.isExecuting) {
+      exec.updateEngineGraph(freshGraph);
+      exec.execute();
     }
-  }, [graphStore, executionStore, uiStore.liveEdit]);
+  }, [graphStore, uiStore.liveEdit]);
 
   // Save parameter change to history (debounced, called on mouse up)
   // Also triggers auto-execute
@@ -140,12 +164,13 @@ export function useGraph() {
     historyStore.saveState(freshGraph, `Change ${paramId}`);
 
     // Always execute after committing a parameter change
-    if (!executionStore.isExecuting) {
+    const exec = useExecutionStore.getState();
+    if (!exec.isExecuting) {
       // Ensure engine has the latest graph before executing
-      executionStore.updateEngineGraph(freshGraph);
-      executionStore.execute();
+      exec.updateEngineGraph(freshGraph);
+      exec.execute();
     }
-  }, [historyStore, executionStore]);
+  }, [historyStore]);
 
   // Move node (no history until commit)
   const moveNode = useCallback((nodeId: string, x: number, y: number) => {
@@ -167,9 +192,9 @@ export function useGraph() {
         nodes: state.nodes,
         edges: state.edges,
       });
-      executionStore.clearCache();
+      useExecutionStore.getState().clearCache();
     }
-  }, [graphStore, historyStore, executionStore]);
+  }, [graphStore, historyStore]);
 
   // Redo
   const redo = useCallback(() => {
@@ -180,19 +205,19 @@ export function useGraph() {
         nodes: state.nodes,
         edges: state.edges,
       });
-      executionStore.clearCache();
+      useExecutionStore.getState().clearCache();
     }
-  }, [graphStore, historyStore, executionStore]);
+  }, [graphStore, historyStore]);
 
   // Execute entire graph
   const executeGraph = useCallback(async () => {
-    await executionStore.execute();
-  }, [executionStore]);
+    await useExecutionStore.getState().execute();
+  }, []);
 
   // Execute from a specific node
   const executeFromNode = useCallback(async (nodeId: string) => {
-    await executionStore.executePartial([nodeId]);
-  }, [executionStore]);
+    await useExecutionStore.getState().executePartial([nodeId]);
+  }, []);
 
   // Delete selection
   const deleteSelection = useCallback(() => {
@@ -233,9 +258,9 @@ export function useGraph() {
     selectedNodeIds: graphStore.selectedNodeIds,
     selectedEdgeIds: graphStore.selectedEdgeIds,
     connectionDrag: graphStore.connectionDrag,
-    isExecuting: executionStore.isExecuting,
-    nodeStates: executionStore.nodeStates,
-    nodeOutputs: executionStore.nodeOutputs,
+    isExecuting,
+    nodeStates,
+    nodeOutputs,
     canUndo: historyStore.canUndo(),
     canRedo: historyStore.canRedo(),
 
@@ -277,7 +302,7 @@ export function useGraph() {
     // Execution
     executeGraph,
     executeFromNode,
-    getNodeOutput: executionStore.getNodeOutput,
+    getNodeOutput: useExecutionStore.getState().getNodeOutput,
 
     // Viewport
     setViewport: graphStore.setViewport,

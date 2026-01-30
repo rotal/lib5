@@ -5,6 +5,8 @@ import { TopToolbar } from './TopToolbar';
 import { GraphCanvas, NodePalette } from '../graph';
 import { PropertiesPanel } from '../properties';
 import { PreviewViewport } from '../preview';
+import { CodeView } from '../code';
+import { SettingsView } from '../settings';
 import { ToastContainer } from '../ui';
 import { MobileBottomNav, MobileBottomSheet } from '../mobile';
 import type { PanelId } from '../../store/uiStore';
@@ -107,7 +109,11 @@ export function AppLayout() {
 
         {/* Main content area */}
         <div className="flex-1 relative overflow-hidden">
-          {viewMode === 'preview' ? (
+          {viewMode === 'settings' ? (
+            <SettingsView />
+          ) : viewMode === 'code' ? (
+            <CodeView />
+          ) : viewMode === 'preview' ? (
             <PreviewViewport />
           ) : (
             <GraphCanvas />
@@ -169,7 +175,11 @@ export function AppLayout() {
 
         {/* Main content area */}
         <div className="flex-1 flex overflow-hidden min-w-0">
-          {viewMode === 'split' ? (
+          {viewMode === 'settings' ? (
+            <SettingsView />
+          ) : viewMode === 'code' ? (
+            <CodeView />
+          ) : viewMode === 'split' ? (
             <>
               {/* Graph canvas */}
               <div className="flex-1 overflow-hidden min-w-[200px]">
