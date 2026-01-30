@@ -411,23 +411,36 @@ export function GizmoOverlay({
         const [pivotXParam, pivotYParam] = gizmo.pivotParams;
         const axis = dragState.handleId.split('_')[2];
 
-        // Get start pivot values (normalized 0-1)
+        // Get start pivot values (normalized, can be outside 0-1)
         const startPivotX = dragState.startParams[pivotXParam] ?? 0.5;
         const startPivotY = dragState.startParams[pivotYParam] ?? 0.5;
 
-        // Convert mouse movement to pivot delta in normalized coordinates
-        const startImg = screenToImage(dragState.startMouseX, dragState.startMouseY);
-        const currentImg = screenToImage(currentX, currentY);
+        // Get current transform parameters for inverse transform
+        const scaleX = gizmo.scaleParams ? ((node.parameters[gizmo.scaleParams[0]] as number) ?? 1) : 1;
+        const scaleY = gizmo.scaleParams ? ((node.parameters[gizmo.scaleParams[1]] as number) ?? 1) : 1;
+        const angleDeg = gizmo.rotationParam ? ((node.parameters[gizmo.rotationParam] as number) ?? 0) : 0;
+        const angleRad = angleDeg * Math.PI / 180;
+        const cos = Math.cos(-angleRad); // Inverse rotation
+        const sin = Math.sin(-angleRad);
 
-        let deltaX = (currentImg.x - startImg.x) / imageWidth;
-        let deltaY = (currentImg.y - startImg.y) / imageHeight;
+        // Calculate screen delta
+        let screenDeltaX = currentX - dragState.startMouseX;
+        let screenDeltaY = currentY - dragState.startMouseY;
 
-        // Constrain to axis
-        if (axis === 'x') deltaY = 0;
-        if (axis === 'y') deltaX = 0;
+        // Constrain to axis in screen space
+        if (axis === 'x') screenDeltaY = 0;
+        if (axis === 'y') screenDeltaX = 0;
 
-        const newPivotX = Math.max(0, Math.min(1, startPivotX + deltaX));
-        const newPivotY = Math.max(0, Math.min(1, startPivotY + deltaY));
+        // Convert screen delta to image space by inverse transform (unrotate, unscale)
+        // First unrotate
+        const unrotatedX = cos * screenDeltaX - sin * screenDeltaY;
+        const unrotatedY = sin * screenDeltaX + cos * screenDeltaY;
+        // Then unscale and convert to normalized coordinates
+        const deltaX = (unrotatedX / zoom) / (scaleX * imageWidth);
+        const deltaY = (unrotatedY / zoom) / (scaleY * imageHeight);
+
+        const newPivotX = startPivotX + deltaX;
+        const newPivotY = startPivotY + deltaY;
 
         // Calculate offset compensation to keep image stationary
         // When pivot changes, we need: newOffset = oldOffset + (oldPivot - newPivot) - RS*(oldPivot - newPivot)
@@ -438,20 +451,19 @@ export function GizmoOverlay({
 
           const startOffsetX = dragState.startParams[offsetXParam] ?? 0;
           const startOffsetY = dragState.startParams[offsetYParam] ?? 0;
-          const scaleX = (node.parameters[scaleXParam] as number) ?? 1;
-          const scaleY = (node.parameters[scaleYParam] as number) ?? 1;
-          const angleDeg = (node.parameters[gizmo.rotationParam] as number) ?? 0;
-          const angleRad = angleDeg * Math.PI / 180;
+          const sX = (node.parameters[scaleXParam] as number) ?? 1;
+          const sY = (node.parameters[scaleYParam] as number) ?? 1;
+          const aRad = angleDeg * Math.PI / 180;
 
           // Pivot delta in pixels
           const dpx = (startPivotX - newPivotX) * imageWidth;
           const dpy = (startPivotY - newPivotY) * imageHeight;
 
           // Apply rotation and scale to the delta: RS * delta
-          const cos = Math.cos(angleRad);
-          const sin = Math.sin(angleRad);
-          const rsDpx = (cos * scaleX * dpx - sin * scaleY * dpy);
-          const rsDpy = (sin * scaleX * dpx + cos * scaleY * dpy);
+          const c = Math.cos(aRad);
+          const s = Math.sin(aRad);
+          const rsDpx = (c * sX * dpx - s * sY * dpy);
+          const rsDpy = (s * sX * dpx + c * sY * dpy);
 
           // Offset compensation: (oldPivot - newPivot) - RS*(oldPivot - newPivot)
           const compensationX = dpx - rsDpx;
@@ -466,7 +478,7 @@ export function GizmoOverlay({
           }
         }
 
-        // Update pivot values
+        // Update pivot values (no clamping - pivot can be outside image bounds)
         if (Number.isFinite(newPivotX) && Number.isFinite(newPivotY)) {
           if (axis !== 'y') updateNodeParameter(node.id, pivotXParam, newPivotX);
           if (axis !== 'x') updateNodeParameter(node.id, pivotYParam, newPivotY);
@@ -849,21 +861,8 @@ export function GizmoOverlay({
   const renderRotationHandle = () => {
     if (!gizmo.showRotation || !gizmo.rotationParam) return null;
 
-    // During translate/pivot drag, use mouse screen position directly for zero-lag feedback
-    const isDraggingTranslateOrPivot = dragState &&
-      (dragState.handleId.startsWith('_translate_') || dragState.handleId.startsWith('_pivot_'));
-
-    let pivotScreen: { x: number; y: number };
-    if (isDraggingTranslateOrPivot) {
-      // Use mouse position directly - no conversion, no lag
-      // Fall back to start position on first frame before currentMouse is set
-      pivotScreen = {
-        x: dragState.currentMouseX ?? dragState.startMouseX,
-        y: dragState.currentMouseY ?? dragState.startMouseY,
-      };
-    } else {
-      pivotScreen = imageToScreen(getPivotPosition().x, getPivotPosition().y);
-    }
+    // Always use calculated position from parameters to stay in sync with image preview
+    const pivotScreen = imageToScreen(getPivotPosition().x, getPivotPosition().y);
     const isHovered = hoveredHandle === '_rotation';
     const isDragging = dragState?.handleId === '_rotation';
     const currentAngle = ((node.parameters[gizmo.rotationParam] as number) ?? 0) * (Math.PI / 180);
@@ -914,21 +913,8 @@ export function GizmoOverlay({
     const hasPivot = gizmo.pivotParams;
     if (!hasTranslate && !hasPivot) return null;
 
-    // During drag, use mouse screen position directly for zero-lag feedback
-    const isDraggingTranslateOrPivot = dragState &&
-      (dragState.handleId.startsWith('_translate_') || dragState.handleId.startsWith('_pivot_'));
-
-    let pivotScreen: { x: number; y: number };
-    if (isDraggingTranslateOrPivot) {
-      // Use mouse position directly - no conversion, no lag
-      // Fall back to start position on first frame before currentMouse is set
-      pivotScreen = {
-        x: dragState.currentMouseX ?? dragState.startMouseX,
-        y: dragState.currentMouseY ?? dragState.startMouseY,
-      };
-    } else {
-      pivotScreen = imageToScreen(getPivotPosition().x, getPivotPosition().y);
-    }
+    // Always use calculated position from parameters to stay in sync with image preview
+    const pivotScreen = imageToScreen(getPivotPosition().x, getPivotPosition().y);
     const AXIS_LENGTH = 50;
     const ARROW_SIZE = 8;
     const CENTER_SIZE = 10;
