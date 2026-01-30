@@ -44,14 +44,17 @@ export function ParameterInput({
 
       // Use slider if we have min/max bounds
       if (min !== undefined && max !== undefined) {
+        // Soft limits: expand range if value is outside bounds
+        const effectiveMin = Math.min(min, numValue);
+        const effectiveMax = Math.max(max, numValue);
         return (
           <Slider
             label={definition.name}
             value={numValue}
             onChange={onChange as (v: number) => void}
             onChangeEnd={onChangeEnd}
-            min={min}
-            max={max}
+            min={effectiveMin}
+            max={effectiveMax}
             step={step || 1}
           />
         );

@@ -35,12 +35,14 @@ export function PreviewViewport() {
   const [previewBgMode, setPreviewBgMode] = useState<'grid' | 'black'>('grid');
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'pivot'>('translate');
   const [gizmoVisibility, setGizmoVisibility] = useState<'all' | 'translate' | 'rotate' | 'scale'>('all');
+  const [isGizmoDragging, setIsGizmoDragging] = useState(false);
 
   // Refs to avoid stale closures during drag operations
   const panRef = useRef(pan);
   const zoomRef = useRef(zoom);
   const splitVerticalRef = useRef(previewSplitVertical);
   const handleFitContentRef = useRef<(() => void) | null>(null);
+  const lockedBBoxRef = useRef<{ minX: number; minY: number; maxX: number; maxY: number; width: number; height: number } | null>(null);
   panRef.current = pan;
   zoomRef.current = zoom;
   splitVerticalRef.current = previewSplitVertical;
@@ -276,13 +278,11 @@ export function PreviewViewport() {
     };
   };
 
-  // Calculate combined bounding box of canvas and all transformed images
-  const combinedBBox = useMemo(() => {
-    // Start with canvas bounds
+  // Calculate dynamic bounding box that fits all content
+  const calculatedBBox = useMemo(() => {
     let minX = 0, minY = 0;
     let maxX = canvasSettings.width, maxY = canvasSettings.height;
 
-    // Expand to include background image bbox
     if (rawBackgroundImage) {
       const bbox = getTransformedBBox(
         rawBackgroundImage.originalWidth,
@@ -295,7 +295,6 @@ export function PreviewViewport() {
       maxY = Math.max(maxY, bbox.maxY);
     }
 
-    // Expand to include foreground image bbox
     if (rawForegroundImage) {
       const bbox = getTransformedBBox(
         rawForegroundImage.originalWidth,
@@ -311,6 +310,28 @@ export function PreviewViewport() {
     return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
   }, [canvasSettings, rawBackgroundImage, rawForegroundImage, backgroundTransform, foregroundTransform]);
 
+  // Lock bbox during gizmo drag to prevent view from shifting
+  // Use locked bbox during drag, calculated bbox otherwise
+  const combinedBBox = isGizmoDragging && lockedBBoxRef.current
+    ? lockedBBoxRef.current
+    : calculatedBBox;
+
+  // Keep a ref to calculatedBBox for use in callback without causing re-renders
+  const calculatedBBoxRef = useRef(calculatedBBox);
+  calculatedBBoxRef.current = calculatedBBox;
+
+  // Callback for gizmo drag state changes - stable reference
+  const handleGizmoDragChange = useCallback((isDragging: boolean) => {
+    if (isDragging && !lockedBBoxRef.current) {
+      // Only lock if not already locked (prevents re-locking on callback updates)
+      lockedBBoxRef.current = calculatedBBoxRef.current;
+    } else if (!isDragging) {
+      lockedBBoxRef.current = null;
+    }
+    setIsGizmoDragging(isDragging);
+  }, []); // No dependencies - stable callback
+
+  // Lock bbox during gizmo drag to prevent view from shifting
   const primaryImageData = backgroundImageData || foregroundImageData;
 
   // Helper to draw an image with its transform applied (offset by bbox origin)
@@ -380,7 +401,7 @@ export function PreviewViewport() {
       return;
     }
 
-    // Use combined bounding box for viewport size
+    // Use active bounding box for viewport size (locked during gizmo drag)
     const width = Math.ceil(combinedBBox.width);
     const height = Math.ceil(combinedBBox.height);
     const offsetX = -combinedBBox.minX;
@@ -613,19 +634,31 @@ export function PreviewViewport() {
     const containerWidth = container.clientWidth - 32;
     const containerHeight = container.clientHeight - 32;
 
-    // Use combinedBBox which includes the transformed image bounds
-    const contentWidth = combinedBBox.width;
-    const contentHeight = combinedBBox.height;
+    // Use calculatedBBox (not locked combinedBBox) for actual content bounds
+    const contentWidth = calculatedBBox.width;
+    const contentHeight = calculatedBBox.height;
 
     if (contentWidth <= 0 || contentHeight <= 0) return;
 
     const scaleX = containerWidth / contentWidth;
     const scaleY = containerHeight / contentHeight;
-    const scale = Math.min(scaleX, scaleY, 10); // Cap at 10x zoom
+    const scale = Math.min(scaleX, scaleY, 10);
+
+    // Calculate pan to center the content
+    const contentCenterX = (calculatedBBox.minX + calculatedBBox.maxX) / 2;
+    const contentCenterY = (calculatedBBox.minY + calculatedBBox.maxY) / 2;
+    // Internal canvas center
+    const canvasCenterX = combinedBBox.width / 2;
+    const canvasCenterY = combinedBBox.height / 2;
+    // Offset to center content
+    const offsetX = -combinedBBox.minX;
+    const offsetY = -combinedBBox.minY;
+    const panX = (canvasCenterX - (contentCenterX + offsetX)) * scale;
+    const panY = (canvasCenterY - (contentCenterY + offsetY)) * scale;
 
     setZoom(scale);
-    setPan({ x: 0, y: 0 });
-  }, [combinedBBox]);
+    setPan({ x: panX, y: panY });
+  }, [calculatedBBox, combinedBBox]);
 
   // Update ref for keyboard handler
   handleFitContentRef.current = handleFitContent;
@@ -876,6 +909,7 @@ export function PreviewViewport() {
             canvasRef={canvasRef}
             gizmoMode={gizmoMode}
             gizmoVisibility={gizmoVisibility}
+            onDragChange={handleGizmoDragChange}
           />
         )}
 

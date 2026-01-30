@@ -24,6 +24,8 @@ interface GizmoOverlayProps {
   gizmoMode: 'translate' | 'pivot';
   /** Gizmo visibility: which gizmos to show (Maya-style Q/W/E/R) */
   gizmoVisibility: 'all' | 'translate' | 'rotate' | 'scale';
+  /** Callback when drag state changes (to lock view during drag) */
+  onDragChange?: (isDragging: boolean) => void;
 }
 
 interface DragState {
@@ -53,12 +55,19 @@ export function GizmoOverlay({
   canvasRef,
   gizmoMode,
   gizmoVisibility,
+  onDragChange,
 }: GizmoOverlayProps) {
   const { updateNodeParameter, commitParameterChange } = useGraph();
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [hoveredHandle, setHoveredHandle] = useState<string | null>(null);
   const [shiftHeld, setShiftHeld] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Notify parent when drag state changes (to lock view during drag)
+  const isDragging = dragState !== null;
+  useEffect(() => {
+    onDragChange?.(isDragging);
+  }, [isDragging, onDragChange]);
 
   // Handle Shift key for both-edge scaling
   useEffect(() => {
@@ -456,8 +465,8 @@ export function GizmoOverlay({
             const factor = currentD / startD;
             const newScale = dragState.startParams[scaleXParam] * factor;
             if (Number.isFinite(newScale)) {
-              updateNodeParameter(node.id, scaleXParam, Math.max(0.01, Math.min(5, newScale)));
-              updateNodeParameter(node.id, scaleYParam, Math.max(0.01, Math.min(5, newScale)));
+              updateNodeParameter(node.id, scaleXParam, Math.max(0.01, newScale));
+              updateNodeParameter(node.id, scaleYParam, Math.max(0.01, newScale));
             }
           }
         } else if (scaleType === 'left' || scaleType === 'right') {
@@ -496,7 +505,7 @@ export function GizmoOverlay({
             }
 
             if (newScaleX > 0.01 && Number.isFinite(newScaleX)) {
-              updateNodeParameter(node.id, scaleXParam, Math.max(0.01, Math.min(5, newScaleX)));
+              updateNodeParameter(node.id, scaleXParam, Math.max(0.01, newScaleX));
             }
           } else {
             // Single edge mode: only dragged edge moves, opposite stays fixed
@@ -553,7 +562,7 @@ export function GizmoOverlay({
               const deltaOffsetX = -fixedEdgeRelX * deltaScaleX * cos;
               const deltaOffsetY = -fixedEdgeRelX * deltaScaleX * sin;
 
-              updateNodeParameter(node.id, scaleXParam, Math.max(0.01, Math.min(5, newScaleX)));
+              updateNodeParameter(node.id, scaleXParam, Math.max(0.01, newScaleX));
               if (Number.isFinite(deltaOffsetX) && Number.isFinite(deltaOffsetY)) {
                 updateNodeParameter(node.id, offsetXParam, startOffsetX + deltaOffsetX);
                 updateNodeParameter(node.id, offsetYParam, startOffsetY + deltaOffsetY);
@@ -592,7 +601,7 @@ export function GizmoOverlay({
             }
 
             if (newScaleY > 0.01 && Number.isFinite(newScaleY)) {
-              updateNodeParameter(node.id, scaleYParam, Math.max(0.01, Math.min(5, newScaleY)));
+              updateNodeParameter(node.id, scaleYParam, Math.max(0.01, newScaleY));
             }
           } else {
             // Single edge mode: only dragged edge moves, opposite stays fixed
@@ -645,7 +654,7 @@ export function GizmoOverlay({
               const deltaOffsetX = fixedEdgeRelY * deltaScaleY * sin;
               const deltaOffsetY = -fixedEdgeRelY * deltaScaleY * cos;
 
-              updateNodeParameter(node.id, scaleYParam, Math.max(0.01, Math.min(5, newScaleY)));
+              updateNodeParameter(node.id, scaleYParam, Math.max(0.01, newScaleY));
               if (Number.isFinite(deltaOffsetX) && Number.isFinite(deltaOffsetY)) {
                 updateNodeParameter(node.id, offsetXParam, startOffsetX + deltaOffsetX);
                 updateNodeParameter(node.id, offsetYParam, startOffsetY + deltaOffsetY);
