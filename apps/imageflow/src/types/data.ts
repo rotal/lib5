@@ -40,11 +40,122 @@ export interface Color {
 }
 
 /**
+ * 2D Transform matrix (3x3 affine transform stored as 6 values)
+ * [a, b, c, d, tx, ty] represents:
+ * | a  b  tx |
+ * | c  d  ty |
+ * | 0  0  1  |
+ *
+ * For a point (x, y):
+ *   x' = a*x + b*y + tx
+ *   y' = c*x + d*y + ty
+ */
+export interface Transform2D {
+  a: number;   // scale X, rotation component
+  b: number;   // skew X, rotation component
+  c: number;   // skew Y, rotation component
+  d: number;   // scale Y, rotation component
+  tx: number;  // translate X
+  ty: number;  // translate Y
+}
+
+/** Identity transform (no transformation) */
+export const IDENTITY_TRANSFORM: Transform2D = {
+  a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0,
+};
+
+/** Create a translation transform */
+export function translateTransform(tx: number, ty: number): Transform2D {
+  return { a: 1, b: 0, c: 0, d: 1, tx, ty };
+}
+
+/** Create a scale transform around origin */
+export function scaleTransform(sx: number, sy: number): Transform2D {
+  return { a: sx, b: 0, c: 0, d: sy, tx: 0, ty: 0 };
+}
+
+/** Create a rotation transform around origin (angle in radians) */
+export function rotateTransform(angle: number): Transform2D {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return { a: cos, b: -sin, c: sin, d: cos, tx: 0, ty: 0 };
+}
+
+/** Multiply two transforms: result = a * b (apply b first, then a) */
+export function multiplyTransform(a: Transform2D, b: Transform2D): Transform2D {
+  return {
+    a: a.a * b.a + a.b * b.c,
+    b: a.a * b.b + a.b * b.d,
+    c: a.c * b.a + a.d * b.c,
+    d: a.c * b.b + a.d * b.d,
+    tx: a.a * b.tx + a.b * b.ty + a.tx,
+    ty: a.c * b.tx + a.d * b.ty + a.ty,
+  };
+}
+
+/** Create a transform: scale and rotate around a pivot point, then translate */
+export function createPivotTransform(
+  scaleX: number,
+  scaleY: number,
+  angleRad: number,
+  pivotX: number,
+  pivotY: number,
+  translateX: number,
+  translateY: number,
+): Transform2D {
+  // Move pivot to origin
+  const toPivot = translateTransform(-pivotX, -pivotY);
+  // Scale
+  const scale = scaleTransform(scaleX, scaleY);
+  // Rotate
+  const rotate = rotateTransform(angleRad);
+  // Move back from pivot
+  const fromPivot = translateTransform(pivotX, pivotY);
+  // Final translation
+  const translate = translateTransform(translateX, translateY);
+
+  // Compose: translate * fromPivot * rotate * scale * toPivot
+  let result = toPivot;
+  result = multiplyTransform(scale, result);
+  result = multiplyTransform(rotate, result);
+  result = multiplyTransform(fromPivot, result);
+  result = multiplyTransform(translate, result);
+  return result;
+}
+
+/** Invert a transform matrix */
+export function invertTransform(t: Transform2D): Transform2D {
+  const det = t.a * t.d - t.b * t.c;
+  if (Math.abs(det) < 1e-10) {
+    // Singular matrix, return identity
+    return { ...IDENTITY_TRANSFORM };
+  }
+  const invDet = 1 / det;
+  return {
+    a: t.d * invDet,
+    b: -t.b * invDet,
+    c: -t.c * invDet,
+    d: t.a * invDet,
+    tx: (t.b * t.ty - t.d * t.tx) * invDet,
+    ty: (t.c * t.tx - t.a * t.ty) * invDet,
+  };
+}
+
+/** Apply transform to a point */
+export function transformPoint(t: Transform2D, x: number, y: number): { x: number; y: number } {
+  return {
+    x: t.a * x + t.b * y + t.tx,
+    y: t.c * x + t.d * y + t.ty,
+  };
+}
+
+/**
  * Float image data with 32-bit float channels (0.0-1.0 range)
  * Supports HDR and high precision color processing
  *
- * Images exist in an infinite coordinate space. The origin defines
- * where this image's top-left corner sits in that space.
+ * Images exist in an infinite coordinate space. The transform defines
+ * how to map from image-local coordinates to world coordinates.
+ * Pixel data is never modified by transforms - only the matrix changes.
  */
 export interface FloatImage {
   /** RGBA pixel data as Float32Array (r,g,b,a,r,g,b,a,...) in 0.0-1.0 range */
@@ -53,8 +164,10 @@ export interface FloatImage {
   width: number;
   /** Image height in pixels */
   height: number;
-  /** Origin position in infinite canvas space (default: 0,0) */
+  /** Origin position in infinite canvas space (default: 0,0) - DEPRECATED, use transform */
   origin?: { x: number; y: number };
+  /** Transform matrix mapping image-local to world coordinates */
+  transform?: Transform2D;
 }
 
 /**

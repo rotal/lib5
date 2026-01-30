@@ -41,6 +41,19 @@ export function PropertiesPanel() {
     [node, commitParameterChange]
   );
 
+  // Reset transform to identity matrix
+  const handleResetTransform = useCallback(() => {
+    if (!node || node.type !== 'transform/transform') return;
+    updateNodeParameter(node.id, 'offsetX', 0);
+    updateNodeParameter(node.id, 'offsetY', 0);
+    updateNodeParameter(node.id, 'angle', 0);
+    updateNodeParameter(node.id, 'scaleX', 1);
+    updateNodeParameter(node.id, 'scaleY', 1);
+    updateNodeParameter(node.id, 'pivotX', 0.5);
+    updateNodeParameter(node.id, 'pivotY', 0.5);
+    commitParameterChange(node.id, 'scaleX');
+  }, [node, updateNodeParameter, commitParameterChange]);
+
   // Get download data for Export nodes
   const downloadData = useMemo((): DownloadData | null => {
     if (!node || node.type !== 'output/export') return null;
@@ -117,6 +130,21 @@ export function PropertiesPanel() {
                 onChangeEnd={() => handleParameterChangeEnd(param.id)}
               />
             ))
+        )}
+
+        {/* Reset button for Transform node */}
+        {node.type === 'transform/transform' && (
+          <div className="pt-2 border-t border-editor-border">
+            <button
+              onClick={handleResetTransform}
+              className="w-full px-4 py-2 rounded font-medium text-sm flex items-center justify-center gap-2 transition-colors bg-editor-surface-light text-editor-text hover:bg-editor-surface-lighter"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Reset Transform
+            </button>
+          </div>
         )}
 
         {/* Download button for Export node */}

@@ -182,7 +182,8 @@ export class GraphEngine {
    * Execute a list of nodes in order
    */
   private async executeNodes(nodeIds: string[]): Promise<void> {
-    this.abortController = new AbortController();
+    const abortController = new AbortController();
+    this.abortController = abortController;
     this.state.isExecuting = true;
     this.state.executionOrder = nodeIds;
     this.state.startTime = Date.now();
@@ -191,7 +192,7 @@ export class GraphEngine {
 
     try {
       for (const nodeId of nodeIds) {
-        if (this.abortController.signal.aborted) {
+        if (abortController.signal.aborted) {
           throw new Error('Execution aborted');
         }
 
@@ -200,7 +201,7 @@ export class GraphEngine {
           continue;
         }
 
-        await this.executeNode(nodeId);
+        await this.executeNode(nodeId, abortController.signal);
       }
 
       this.state.endTime = Date.now();
@@ -219,7 +220,7 @@ export class GraphEngine {
   /**
    * Execute a single node
    */
-  private async executeNode(nodeId: string): Promise<void> {
+  private async executeNode(nodeId: string, signal: AbortSignal): Promise<void> {
     const node = this.graph.nodes[nodeId];
     if (!node) {
       throw new Error(`Node not found: ${nodeId}`);
@@ -288,7 +289,7 @@ export class GraphEngine {
       const context: ExecutionContext = {
         nodeId,
         graphId: this.graph.id,
-        signal: this.abortController!.signal,
+        signal,
         reportProgress: (progress: number) => {
           this.state.nodeStates[nodeId].progress = progress;
           this.callbacks.onNodeProgress?.(nodeId, progress);

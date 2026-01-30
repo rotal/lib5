@@ -150,6 +150,10 @@ export interface GizmoDefinition {
   scaleParams?: [string, string];
   /** Whether scale should be uniform */
   uniformScaleParam?: string;
+  /** Parameter IDs for translation [x, y] - shows Maya-style 2D axis gizmo */
+  translateParams?: [string, string];
+  /** Coordinate system for translate params (default: pixels) */
+  translateCoordSystem?: 'normalized' | 'pixels' | 'percent';
 }
 
 /**

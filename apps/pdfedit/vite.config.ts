@@ -7,11 +7,20 @@ export default defineConfig({
   server: {
     port: 3001,
     host: true,
+    headers: {
+      // Required for SharedArrayBuffer which MuPDF may use
+      'Cross-Origin-Opener-Policy': 'same-origin',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
+    },
   },
   build: {
     target: 'esnext',
     sourcemap: true,
     outDir: '../../dist/pdfedit',
     emptyOutDir: true,
+  },
+  optimizeDeps: {
+    // Exclude mupdf from pre-bundling as it has WASM
+    exclude: ['mupdf'],
   },
 });

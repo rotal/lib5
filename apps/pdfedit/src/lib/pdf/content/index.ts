@@ -1,0 +1,35 @@
+export { ContentLexer, type ContentToken, type ContentTokenType } from './ContentLexer';
+export {
+  ContentParser,
+  TEXT_BEGIN,
+  TEXT_END,
+  TEXT_FONT,
+  TEXT_MOVE,
+  TEXT_MOVE_SET,
+  TEXT_MATRIX,
+  TEXT_NEWLINE,
+  TEXT_SHOW,
+  TEXT_SHOW_ARRAY,
+  TEXT_SHOW_NEWLINE,
+  TEXT_SHOW_SPACING,
+  TEXT_CHAR_SPACE,
+  TEXT_WORD_SPACE,
+  TEXT_HORIZ_SCALE,
+  TEXT_LEADING,
+  TEXT_RISE,
+  TEXT_RENDER,
+  STATE_SAVE,
+  STATE_RESTORE,
+  CONCAT_MATRIX,
+  TEXT_OPERATORS,
+  TEXT_SHOWING_OPERATORS,
+} from './ContentParser';
+export {
+  GraphicsState,
+  multiplyMatrix,
+  transformPoint,
+  type Matrix,
+  type TextState,
+  type GraphicsStateSnapshot,
+} from './GraphicsState';
+export { TextExtractor, type TextDecoder, type FontMap } from './TextExtractor';

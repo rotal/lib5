@@ -52,7 +52,7 @@ export function Slider({
   // Handle clicking on the value to edit
   const handleValueClick = useCallback(() => {
     if (disabled) return;
-    setEditValue(step < 1 ? value.toFixed(2) : String(value));
+    setEditValue(value.toFixed(2));
     setIsEditing(true);
   }, [value, step, disabled]);
 
@@ -108,7 +108,7 @@ export function Slider({
                 onClick={handleValueClick}
                 title="Click to edit"
               >
-                {step < 1 ? value.toFixed(2) : value}
+                {value.toFixed(2)}
               </span>
             )
           )}

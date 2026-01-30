@@ -58,7 +58,12 @@ export function GraphNode({
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, y: 0, nodeX: 0, nodeY: 0 });
   const dragStartPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
-  const { previewSlots, previewBackgroundActive, previewForegroundSlot } = useUiStore();
+
+  // Touch interaction state
+  const touchState = useRef<'idle' | 'potential_tap' | 'dragging' | 'long_press'>('idle');
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartPos = useRef({ x: 0, y: 0 });
+  const { previewSlots, previewBackgroundActive, previewForegroundSlot, showContextMenu } = useUiStore();
   const selectedNodeIds = useGraphStore((s) => s.selectedNodeIds);
   const graph = useGraphStore((s) => s.graph);
   const { downloadGPUTexture } = useExecutionStore();
@@ -246,6 +251,131 @@ export function GraphNode({
     window.addEventListener('mouseup', handleMouseUp);
   }, [node.id, node.position, zoom, onSelect, onMove, onMoveEnd, isSelected, selectedNodeIds, graph.nodes]);
 
+  // Touch handlers for mobile
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    // Ignore if touching a port
+    if ((e.target as HTMLElement).classList.contains('node-port')) {
+      return;
+    }
+
+    e.stopPropagation();
+
+    if (e.touches.length !== 1) return;
+
+    const touch = e.touches[0];
+    touchStartPos.current = { x: touch.clientX, y: touch.clientY };
+    touchState.current = 'potential_tap';
+
+    // Store drag start info
+    dragStart.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      nodeX: node.position.x,
+      nodeY: node.position.y,
+    };
+
+    // Capture initial positions for multi-drag
+    const currentSelectedIds = useGraphStore.getState().selectedNodeIds;
+    const currentGraph = useGraphStore.getState().graph;
+    dragStartPositions.current.clear();
+    const nodesToMove = currentSelectedIds.has(node.id) ? currentSelectedIds : new Set([node.id]);
+    for (const id of nodesToMove) {
+      const n = currentGraph.nodes[id];
+      if (n) {
+        dragStartPositions.current.set(id, { x: n.position.x, y: n.position.y });
+      }
+    }
+
+    // Start long-press timer (500ms)
+    longPressTimer.current = setTimeout(() => {
+      if (touchState.current === 'potential_tap') {
+        touchState.current = 'long_press';
+        // Show context menu at touch position
+        showContextMenu(touch.clientX, touch.clientY, 'node', node.id);
+        // Select the node
+        if (!isSelected) {
+          onSelect(node.id, false);
+        }
+      }
+    }, 500);
+  }, [node.id, node.position, isSelected, onSelect, showContextMenu]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+
+    const touch = e.touches[0];
+    const dx = touch.clientX - touchStartPos.current.x;
+    const dy = touch.clientY - touchStartPos.current.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    // If moved more than 10px, cancel long-press and start dragging
+    if (distance > 10 && touchState.current === 'potential_tap') {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+      }
+      touchState.current = 'dragging';
+      isDragging.current = true;
+
+      // Select node if not already selected
+      if (!isSelected) {
+        onSelect(node.id, false);
+        // Update drag start positions after selection
+        const currentSelectedIds = useGraphStore.getState().selectedNodeIds;
+        const currentGraph = useGraphStore.getState().graph;
+        dragStartPositions.current.clear();
+        const nodesToMove = currentSelectedIds.has(node.id) ? currentSelectedIds : new Set([node.id]);
+        for (const id of nodesToMove) {
+          const n = currentGraph.nodes[id];
+          if (n) {
+            dragStartPositions.current.set(id, { x: n.position.x, y: n.position.y });
+          }
+        }
+      }
+    }
+
+    // If dragging, move the node(s)
+    if (touchState.current === 'dragging') {
+      e.preventDefault();
+      const moveDx = (touch.clientX - dragStart.current.x) / zoom;
+      const moveDy = (touch.clientY - dragStart.current.y) / zoom;
+
+      for (const [id, startPos] of dragStartPositions.current) {
+        onMove(id, startPos.x + moveDx, startPos.y + moveDy);
+      }
+    }
+  }, [zoom, onMove, onSelect, isSelected, node.id]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    // Clear long-press timer
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+
+    // Handle tap (select node)
+    if (touchState.current === 'potential_tap') {
+      onSelect(node.id, e.touches.length > 0); // Multi-touch = additive
+    }
+
+    // End dragging
+    if (touchState.current === 'dragging') {
+      isDragging.current = false;
+      onMoveEnd();
+    }
+
+    touchState.current = 'idle';
+  }, [node.id, onSelect, onMoveEnd]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+    };
+  }, []);
+
   if (!definition) {
     return (
       <div
@@ -283,8 +413,12 @@ export function GraphNode({
         left: node.position.x,
         top: node.position.y,
         position: 'absolute',
+        touchAction: 'none', // Prevent browser touch gestures
       }}
       onMouseDown={handleMouseDown}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
     >
       {/* Preview slot indicator - top left */}
       {previewSlotIndex !== null && (
