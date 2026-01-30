@@ -10,8 +10,8 @@ interface GizmoOverlayProps {
   /** Image dimensions */
   imageWidth: number;
   imageHeight: number;
-  /** Offset to add when converting image coordinates to canvas coordinates */
-  bboxOffset?: { x: number; y: number };
+  /** Project canvas size (for centering in view) */
+  canvasSize: { width: number; height: number };
   /** Current zoom level */
   zoom: number;
   /** Current pan offset */
@@ -48,7 +48,7 @@ export function GizmoOverlay({
   gizmo,
   imageWidth,
   imageHeight,
-  bboxOffset = { x: 0, y: 0 },
+  canvasSize,
   zoom,
   pan,
   containerRef,
@@ -89,55 +89,50 @@ export function GizmoOverlay({
     };
   }, []);
 
-  // Convert image coordinates to screen coordinates
-  // Uses canvas's actual bounding rect to ensure perfect alignment with rendered image
+  // Convert image/project coordinates to screen coordinates
+  // The rendering uses: translate(centerX + pan.x, centerY + pan.y) then scale(zoom)
+  // Then project offset is (-canvasSize.width/2, -canvasSize.height/2)
   const imageToScreen = useCallback(
     (ix: number, iy: number): { x: number; y: number } => {
       const container = containerRef.current;
-      const canvas = canvasRef.current;
-      if (!container || !canvas) return { x: 0, y: 0 };
+      if (!container) return { x: 0, y: 0 };
 
       const containerRect = container.getBoundingClientRect();
-      const canvasRect = canvas.getBoundingClientRect();
+      const centerX = containerRect.width / 2;
+      const centerY = containerRect.height / 2;
 
-      // Convert image coordinates to canvas coordinates by adding bbox offset
-      const canvasX = ix + bboxOffset.x;
-      const canvasY = iy + bboxOffset.y;
-
-      // Map canvas coordinates to screen coordinates
-      const screenX = (canvasRect.left - containerRect.left) + (canvasX / canvas.width) * canvasRect.width;
-      const screenY = (canvasRect.top - containerRect.top) + (canvasY / canvas.height) * canvasRect.height;
+      // Project coords (ix, iy) -> view coords (ix - canvasSize.width/2, iy - canvasSize.height/2)
+      // View coords -> screen coords: (vx * zoom + centerX + pan.x, vy * zoom + centerY + pan.y)
+      const viewX = ix - canvasSize.width / 2;
+      const viewY = iy - canvasSize.height / 2;
+      const screenX = viewX * zoom + centerX + pan.x;
+      const screenY = viewY * zoom + centerY + pan.y;
 
       return { x: screenX, y: screenY };
     },
-    [containerRef, canvasRef, bboxOffset]
+    [containerRef, canvasSize, zoom, pan]
   );
 
-  // Convert screen coordinates to image coordinates
-  // Inverse of imageToScreen - uses canvas's actual bounding rect
+  // Convert screen coordinates to image/project coordinates
+  // Inverse of imageToScreen
   const screenToImage = useCallback(
     (sx: number, sy: number): { x: number; y: number } => {
       const container = containerRef.current;
-      const canvas = canvasRef.current;
-      if (!container || !canvas) return { x: 0, y: 0 };
+      if (!container) return { x: 0, y: 0 };
 
       const containerRect = container.getBoundingClientRect();
-      const canvasRect = canvas.getBoundingClientRect();
+      const centerX = containerRect.width / 2;
+      const centerY = containerRect.height / 2;
 
-      // Map screen coordinates back to canvas coordinates
-      const canvasLocalX = sx - (canvasRect.left - containerRect.left);
-      const canvasLocalY = sy - (canvasRect.top - containerRect.top);
-
-      const canvasX = (canvasLocalX / canvasRect.width) * canvas.width;
-      const canvasY = (canvasLocalY / canvasRect.height) * canvas.height;
-
-      // Convert canvas coordinates to image coordinates by subtracting bbox offset
-      const imageX = canvasX - bboxOffset.x;
-      const imageY = canvasY - bboxOffset.y;
+      // Reverse: screen -> view -> project
+      const viewX = (sx - centerX - pan.x) / zoom;
+      const viewY = (sy - centerY - pan.y) / zoom;
+      const imageX = viewX + canvasSize.width / 2;
+      const imageY = viewY + canvasSize.height / 2;
 
       return { x: imageX, y: imageY };
     },
-    [containerRef, canvasRef, bboxOffset]
+    [containerRef, canvasSize, zoom, pan]
   );
 
   // Get pivot position in world coordinates (after transform applied)
@@ -757,67 +752,23 @@ export function GizmoOverlay({
           fill="none"
           stroke="white"
           strokeWidth="1"
-          strokeDasharray="4 4"
-          style={{ pointerEvents: 'none' }}
-        />
-        <path
-          d={pathData}
-          fill="none"
-          stroke="rgba(0,0,0,0.5)"
-          strokeWidth="1"
-          strokeDasharray="4 4"
-          strokeDashoffset="4"
           style={{ pointerEvents: 'none' }}
         />
 
         {/* Interactive edges for single-axis scaling */}
-        {gizmo.scaleParams && edges.map((edge) => {
-          const isHovered = hoveredHandle === `_scale_${edge.id}`;
-          const isDragging = dragState?.handleId === `_scale_${edge.id}`;
-          const midX = (edge.p1.x + edge.p2.x) / 2;
-          const midY = (edge.p1.y + edge.p2.y) / 2;
-
-          return (
-            <g key={edge.id}>
-              {/* Edge hit area */}
-              <line
-                x1={edge.p1.x}
-                y1={edge.p1.y}
-                x2={edge.p2.x}
-                y2={edge.p2.y}
-                stroke="transparent"
-                strokeWidth={EDGE_HIT_SIZE}
-                style={{ cursor: edge.cursor }}
-                onMouseDown={(e) => handleScaleMouseDown(e, `_scale_${edge.id}`)}
-                onMouseEnter={() => setHoveredHandle(`_scale_${edge.id}`)}
-                onMouseLeave={() => setHoveredHandle(null)}
-              />
-              {/* Edge highlight when hovered */}
-              {(isHovered || isDragging) && (
-                <line
-                  x1={edge.p1.x}
-                  y1={edge.p1.y}
-                  x2={edge.p2.x}
-                  y2={edge.p2.y}
-                  stroke="#3b82f6"
-                  strokeWidth="3"
-                  style={{ pointerEvents: 'none' }}
-                />
-              )}
-              {/* Midpoint indicator */}
-              <rect
-                x={midX - 4}
-                y={midY - 4}
-                width={8}
-                height={8}
-                fill={isHovered || isDragging ? '#3b82f6' : 'white'}
-                stroke={isHovered || isDragging ? 'white' : '#666'}
-                strokeWidth="1"
-                style={{ pointerEvents: 'none' }}
-              />
-            </g>
-          );
-        })}
+        {gizmo.scaleParams && edges.map((edge) => (
+          <line
+            key={edge.id}
+            x1={edge.p1.x}
+            y1={edge.p1.y}
+            x2={edge.p2.x}
+            y2={edge.p2.y}
+            stroke="transparent"
+            strokeWidth={EDGE_HIT_SIZE}
+            style={{ cursor: edge.cursor }}
+            onMouseDown={(e) => handleScaleMouseDown(e, `_scale_${edge.id}`)}
+          />
+        ))}
 
         {/* Interactive corners for uniform scaling */}
         {gizmo.scaleParams && screenCorners.map((corner, i) => {

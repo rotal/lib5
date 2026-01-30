@@ -35,14 +35,13 @@ export function PreviewViewport() {
   const [previewBgMode, setPreviewBgMode] = useState<'grid' | 'black'>('grid');
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'pivot'>('translate');
   const [gizmoVisibility, setGizmoVisibility] = useState<'all' | 'translate' | 'rotate' | 'scale'>('all');
-  const [isGizmoDragging, setIsGizmoDragging] = useState(false);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
   // Refs to avoid stale closures during drag operations
   const panRef = useRef(pan);
   const zoomRef = useRef(zoom);
   const splitVerticalRef = useRef(previewSplitVertical);
   const handleFitContentRef = useRef<(() => void) | null>(null);
-  const lockedBBoxRef = useRef<{ minX: number; minY: number; maxX: number; maxY: number; width: number; height: number } | null>(null);
   panRef.current = pan;
   zoomRef.current = zoom;
   splitVerticalRef.current = previewSplitVertical;
@@ -310,176 +309,162 @@ export function PreviewViewport() {
     return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
   }, [canvasSettings, rawBackgroundImage, rawForegroundImage, backgroundTransform, foregroundTransform]);
 
-  // Lock bbox during gizmo drag to prevent view from shifting
-  // Use locked bbox during drag, calculated bbox otherwise
-  const combinedBBox = isGizmoDragging && lockedBBoxRef.current
-    ? lockedBBoxRef.current
-    : calculatedBBox;
+  // No-op callback for gizmo drag state (canvas fills container, no view locking needed)
+  const handleGizmoDragChange = useCallback((_isDragging: boolean) => {
+    // Canvas fills entire container, no view locking needed
+  }, []);
 
-  // Keep a ref to calculatedBBox for use in callback without causing re-renders
-  const calculatedBBoxRef = useRef(calculatedBBox);
-  calculatedBBoxRef.current = calculatedBBox;
-
-  // Callback for gizmo drag state changes - stable reference
-  const handleGizmoDragChange = useCallback((isDragging: boolean) => {
-    if (isDragging && !lockedBBoxRef.current) {
-      // Only lock if not already locked (prevents re-locking on callback updates)
-      lockedBBoxRef.current = calculatedBBoxRef.current;
-    } else if (!isDragging) {
-      lockedBBoxRef.current = null;
-    }
-    setIsGizmoDragging(isDragging);
-  }, []); // No dependencies - stable callback
-
-  // Lock bbox during gizmo drag to prevent view from shifting
   const primaryImageData = backgroundImageData || foregroundImageData;
 
-  // Helper to draw an image with its transform applied (offset by bbox origin)
-  const drawImageWithTransform = (
-    ctx: CanvasRenderingContext2D,
-    imageData: ImageData,
-    transform: Transform2D,
-    offsetX: number,
-    offsetY: number,
-  ) => {
-    // Create temp canvas with raw image data
-    const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = imageData.width;
-    tempCanvas.height = imageData.height;
-    const tempCtx = tempCanvas.getContext('2d');
-    if (!tempCtx) return;
-    tempCtx.putImageData(imageData, 0, 0);
+  // Track container size with ResizeObserver
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-    // Apply transform with offset and draw
-    ctx.save();
-    ctx.setTransform(
-      transform.a, transform.c, transform.b, transform.d,
-      transform.tx + offsetX, transform.ty + offsetY
-    );
-    ctx.drawImage(tempCanvas, 0, 0);
-    ctx.restore();
-  };
+    const updateSize = () => {
+      setContainerSize({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
+    };
 
-  // Render to canvas
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  // Render to canvas - fills entire container, applies zoom/pan internally
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || containerSize.width === 0 || containerSize.height === 0) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Canvas fills the entire container
+    const width = containerSize.width;
+    const height = containerSize.height;
+    canvas.width = width;
+    canvas.height = height;
+
+    // Clear with transparent (container background shows through)
+    ctx.clearRect(0, 0, width, height);
 
     if (!primaryImageData) {
       // Check for scalar data from foreground or background node
       const scalarData = getScalarDataForNode(foregroundNodeId) || getScalarDataForNode(backgroundNodeId);
       if (scalarData) {
-        canvas.width = 300;
-        canvas.height = 200;
         ctx.fillStyle = '#1a1a2e';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(width / 2 - 150, height / 2 - 100, 300, 200);
         ctx.textAlign = 'center';
-        let yPos = canvas.height / 2 - (scalarData.length - 1) * 25;
+        let yPos = height / 2 - (scalarData.length - 1) * 25;
         for (const item of scalarData) {
           ctx.fillStyle = '#808090';
           ctx.font = '12px sans-serif';
-          ctx.fillText(item.name, 150, yPos);
+          ctx.fillText(item.name, width / 2, yPos);
           ctx.fillStyle = '#e0e0e8';
           ctx.font = '28px monospace';
-          ctx.fillText(item.value, 150, yPos + 30);
+          ctx.fillText(item.value, width / 2, yPos + 30);
           yPos += 60;
         }
       } else {
-        canvas.width = 100;
-        canvas.height = 100;
-        ctx.fillStyle = '#1a1a2e';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = '#808090';
         ctx.font = '14px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('No preview', 50, 55);
+        ctx.fillText('No preview', width / 2, height / 2);
       }
       setImageInfo(null);
       return;
     }
 
-    // Use active bounding box for viewport size (locked during gizmo drag)
-    const width = Math.ceil(combinedBBox.width);
-    const height = Math.ceil(combinedBBox.height);
-    const offsetX = -combinedBBox.minX;
-    const offsetY = -combinedBBox.minY;
-    canvas.width = width;
-    canvas.height = height;
+    // Apply view transform: translate to center, then pan, then zoom
+    // Project canvas origin (0,0) should be at center of view when pan is (0,0)
+    const centerX = width / 2;
+    const centerY = height / 2;
 
-    // Clear buffer - transparent so container background shows through
-    ctx.clearRect(0, 0, width, height);
+    ctx.save();
+    // Move origin to center of container, apply pan, apply zoom
+    ctx.translate(centerX + pan.x, centerY + pan.y);
+    ctx.scale(zoom, zoom);
+    // Now (0,0) in this context is the center of the project canvas
+    // Offset to make project canvas origin at (-canvasSettings.width/2, -canvasSettings.height/2)
+    const projectOffsetX = -canvasSettings.width / 2;
+    const projectOffsetY = -canvasSettings.height / 2;
+
+    // Helper to draw image with its transform
+    const drawImage = (imageData: ImageData, transform: Transform2D) => {
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = imageData.width;
+      tempCanvas.height = imageData.height;
+      const tempCtx = tempCanvas.getContext('2d');
+      if (!tempCtx) return;
+      tempCtx.putImageData(imageData, 0, 0);
+
+      ctx.save();
+      ctx.transform(
+        transform.a, transform.c, transform.b, transform.d,
+        transform.tx + projectOffsetX, transform.ty + projectOffsetY
+      );
+      ctx.drawImage(tempCanvas, 0, 0);
+      ctx.restore();
+    };
 
     if (showComparison) {
-      // Draw background with transform
-      drawImageWithTransform(ctx, backgroundImageData!, backgroundTransform, offsetX, offsetY);
+      // Draw background
+      drawImage(backgroundImageData!, backgroundTransform);
 
-      // Create temp canvas for foreground with transform
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = width;
-      tempCanvas.height = height;
-      const tempCtx = tempCanvas.getContext('2d');
-
-      if (tempCtx) {
-        // Clear temp canvas - transparent so container background shows through
-        tempCtx.clearRect(0, 0, width, height);
-        drawImageWithTransform(tempCtx, foregroundImageData!, foregroundTransform, offsetX, offsetY);
-
-        // Clip foreground based on split position
-        ctx.save();
-        ctx.beginPath();
-        if (previewSplitVertical) {
-          const splitX = width * previewSplitPosition;
-          if (previewSplitReversed) {
-            ctx.rect(splitX, 0, width - splitX, height);
-          } else {
-            ctx.rect(0, 0, splitX, height);
-          }
+      // Draw foreground with clip
+      ctx.save();
+      ctx.beginPath();
+      if (previewSplitVertical) {
+        const splitX = projectOffsetX + canvasSettings.width * previewSplitPosition;
+        if (previewSplitReversed) {
+          ctx.rect(splitX, projectOffsetY - 10000, 20000, 20000);
         } else {
-          const splitY = height * previewSplitPosition;
-          if (previewSplitReversed) {
-            ctx.rect(0, splitY, width, height - splitY);
-          } else {
-            ctx.rect(0, 0, width, splitY);
-          }
+          ctx.rect(projectOffsetX - 10000, projectOffsetY - 10000, splitX - projectOffsetX + 10000, 20000);
         }
-        ctx.clip();
-        ctx.drawImage(tempCanvas, 0, 0);
-        ctx.restore();
+      } else {
+        const splitY = projectOffsetY + canvasSettings.height * previewSplitPosition;
+        if (previewSplitReversed) {
+          ctx.rect(projectOffsetX - 10000, splitY, 20000, 20000);
+        } else {
+          ctx.rect(projectOffsetX - 10000, projectOffsetY - 10000, 20000, splitY - projectOffsetY + 10000);
+        }
       }
+      ctx.clip();
+      drawImage(foregroundImageData!, foregroundTransform);
+      ctx.restore();
 
       // Draw split line
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 / zoom; // Keep line width consistent regardless of zoom
       ctx.beginPath();
       if (previewSplitVertical) {
-        const splitX = width * previewSplitPosition;
-        ctx.moveTo(splitX, 0);
-        ctx.lineTo(splitX, height);
+        const splitX = projectOffsetX + canvasSettings.width * previewSplitPosition;
+        ctx.moveTo(splitX, projectOffsetY - 10000);
+        ctx.lineTo(splitX, projectOffsetY + 10000);
       } else {
-        const splitY = height * previewSplitPosition;
-        ctx.moveTo(0, splitY);
-        ctx.lineTo(width, splitY);
+        const splitY = projectOffsetY + canvasSettings.height * previewSplitPosition;
+        ctx.moveTo(projectOffsetX - 10000, splitY);
+        ctx.lineTo(projectOffsetX + 10000, splitY);
       }
       ctx.stroke();
     } else if (hasBackground) {
-      drawImageWithTransform(ctx, backgroundImageData!, backgroundTransform, offsetX, offsetY);
+      drawImage(backgroundImageData!, backgroundTransform);
     } else if (hasForeground) {
-      drawImageWithTransform(ctx, foregroundImageData!, foregroundTransform, offsetX, offsetY);
+      drawImage(foregroundImageData!, foregroundTransform);
     }
 
     // Draw canvas border to indicate project resolution bounds
-    // The canvas origin (0,0) is at offsetX, offsetY in the combined bbox coordinate system
     ctx.strokeStyle = '#ffcc00';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 4]);
-    ctx.strokeRect(offsetX, offsetY, canvasSettings.width, canvasSettings.height);
-    ctx.setLineDash([]);
+    ctx.lineWidth = 2 / zoom;
+    ctx.strokeRect(projectOffsetX, projectOffsetY, canvasSettings.width, canvasSettings.height);
 
-    setImageInfo({ width, height });
-  }, [nodeOutputs, backgroundNodeId, foregroundNodeId, previewSplitPosition, previewSplitVertical, previewSplitReversed, downloadGPUTexture, channelMode, canvasSettings, combinedBBox]);
+    ctx.restore();
+
+    setImageInfo({ width: canvasSettings.width, height: canvasSettings.height });
+  }, [nodeOutputs, backgroundNodeId, foregroundNodeId, previewSplitPosition, previewSplitVertical, previewSplitReversed, downloadGPUTexture, channelMode, canvasSettings, containerSize, zoom, pan]);
 
   // Auto-fit on first load or when canvas size changes
   useEffect(() => {
@@ -508,42 +493,50 @@ export function PreviewViewport() {
     setZoom((z) => Math.max(0.1, Math.min(10, z * delta)));
   }, []);
 
-  // Helper to convert screen coordinates to image coordinates (uses refs for fresh values)
-  const screenToImageCoords = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
+  // Helper to convert screen coordinates to project coordinates
+  // Project coordinates: (0,0) is top-left of project canvas
+  const screenToProjectCoords = useCallback((clientX: number, clientY: number): { x: number; y: number } | null => {
     const container = containerRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !canvas) return null;
+    if (!container) return null;
 
     const containerRect = container.getBoundingClientRect();
     const containerCenterX = containerRect.left + containerRect.width / 2;
     const containerCenterY = containerRect.top + containerRect.height / 2;
 
-    // Calculate position relative to center, accounting for pan and zoom (use refs for fresh values)
+    // Convert screen to project coordinates
+    // In render: ctx.translate(centerX + pan.x, centerY + pan.y); ctx.scale(zoom, zoom);
+    // Then project offset is (-canvasSettings.width/2, -canvasSettings.height/2)
     const currentPan = panRef.current;
     const currentZoom = zoomRef.current;
-    const imageX = (clientX - containerCenterX - currentPan.x) / currentZoom + canvas.width / 2;
-    const imageY = (clientY - containerCenterY - currentPan.y) / currentZoom + canvas.height / 2;
+    const canvasSettingsRef = useGraphStore.getState().graph.canvas;
 
-    return { x: imageX, y: imageY };
+    // Reverse the transform: screen -> view -> project
+    const viewX = (clientX - containerCenterX - currentPan.x) / currentZoom;
+    const viewY = (clientY - containerCenterY - currentPan.y) / currentZoom;
+    // View coords have project center at (0,0), so add half canvas size to get project coords
+    const projectX = viewX + canvasSettingsRef.width / 2;
+    const projectY = viewY + canvasSettingsRef.height / 2;
+
+    return { x: projectX, y: projectY };
   }, []);
 
   // Check if mouse is near the splitter line
   const checkNearSplitter = useCallback((clientX: number, clientY: number): boolean => {
-    if (!showComparison || !primaryImageData) return false;
+    if (!showComparison) return false;
 
-    const imageCoords = screenToImageCoords(clientX, clientY);
-    if (!imageCoords) return false;
+    const projectCoords = screenToProjectCoords(clientX, clientY);
+    if (!projectCoords) return false;
 
     const threshold = 8 / zoomRef.current; // 8 pixels in screen space
 
     if (splitVerticalRef.current) {
-      const splitX = primaryImageData.width * previewSplitPosition;
-      return Math.abs(imageCoords.x - splitX) < threshold;
+      const splitX = canvasSettings.width * previewSplitPosition;
+      return Math.abs(projectCoords.x - splitX) < threshold;
     } else {
-      const splitY = primaryImageData.height * previewSplitPosition;
-      return Math.abs(imageCoords.y - splitY) < threshold;
+      const splitY = canvasSettings.height * previewSplitPosition;
+      return Math.abs(projectCoords.y - splitY) < threshold;
     }
-  }, [showComparison, primaryImageData, previewSplitPosition, screenToImageCoords]);
+  }, [showComparison, canvasSettings, previewSplitPosition, screenToProjectCoords]);
 
   // Handle mouse move for cursor changes
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -562,18 +555,15 @@ export function PreviewViewport() {
       setIsDraggingSplitter(true);
 
       const handleSplitterMove = (moveEvent: MouseEvent) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
+        const projectCoords = screenToProjectCoords(moveEvent.clientX, moveEvent.clientY);
+        if (!projectCoords) return;
 
-        const imageCoords = screenToImageCoords(moveEvent.clientX, moveEvent.clientY);
-        if (!imageCoords) return;
-
-        // Use refs to get fresh values during drag
+        // Convert to 0-1 position relative to project canvas
         let position: number;
         if (splitVerticalRef.current) {
-          position = imageCoords.x / canvas.width;
+          position = projectCoords.x / canvasSettings.width;
         } else {
-          position = imageCoords.y / canvas.height;
+          position = projectCoords.y / canvasSettings.height;
         }
 
         setPreviewSplitPosition(Math.max(0, Math.min(1, position)));
@@ -609,7 +599,7 @@ export function PreviewViewport() {
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
-  }, [pan, checkNearSplitter, screenToImageCoords, setPreviewSplitPosition]);
+  }, [pan, checkNearSplitter, screenToProjectCoords, setPreviewSplitPosition, canvasSettings]);
 
   const handleFit = useCallback(() => {
     if (!containerRef.current) return;
@@ -634,7 +624,7 @@ export function PreviewViewport() {
     const containerWidth = container.clientWidth - 32;
     const containerHeight = container.clientHeight - 32;
 
-    // Use calculatedBBox (not locked combinedBBox) for actual content bounds
+    // Use calculatedBBox for actual content bounds
     const contentWidth = calculatedBBox.width;
     const contentHeight = calculatedBBox.height;
 
@@ -645,20 +635,22 @@ export function PreviewViewport() {
     const scale = Math.min(scaleX, scaleY, 10);
 
     // Calculate pan to center the content
+    // Content center in project space (where 0,0 is project canvas origin)
     const contentCenterX = (calculatedBBox.minX + calculatedBBox.maxX) / 2;
     const contentCenterY = (calculatedBBox.minY + calculatedBBox.maxY) / 2;
-    // Internal canvas center
-    const canvasCenterX = combinedBBox.width / 2;
-    const canvasCenterY = combinedBBox.height / 2;
-    // Offset to center content
-    const offsetX = -combinedBBox.minX;
-    const offsetY = -combinedBBox.minY;
-    const panX = (canvasCenterX - (contentCenterX + offsetX)) * scale;
-    const panY = (canvasCenterY - (contentCenterY + offsetY)) * scale;
+    // Project canvas center
+    const projectCenterX = canvasSettings.width / 2;
+    const projectCenterY = canvasSettings.height / 2;
+    // Offset from project center to content center (in project space)
+    const offsetX = contentCenterX - projectCenterX;
+    const offsetY = contentCenterY - projectCenterY;
+    // Pan in screen space to shift view by this offset
+    const panX = -offsetX * scale;
+    const panY = -offsetY * scale;
 
     setZoom(scale);
     setPan({ x: panX, y: panY });
-  }, [calculatedBBox, combinedBBox]);
+  }, [calculatedBBox, canvasSettings]);
 
   // Update ref for keyboard handler
   handleFitContentRef.current = handleFitContent;
@@ -863,7 +855,7 @@ export function PreviewViewport() {
       {/* Canvas container */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden flex items-center justify-center relative"
+        className="flex-1 relative overflow-hidden"
         style={{
           cursor: isDraggingSplitter
             ? (previewSplitVertical ? 'col-resize' : 'row-resize')
@@ -882,18 +874,11 @@ export function PreviewViewport() {
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setIsNearSplitter(false)}
       >
-        <div
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            transformOrigin: 'center center',
-          }}
-        >
-          <canvas
-            ref={canvasRef}
-            className="shadow-lg"
-            style={{ imageRendering: zoom > 2 ? 'pixelated' : 'auto' }}
-          />
-        </div>
+        <canvas
+          ref={canvasRef}
+          className="absolute inset-0 w-full h-full"
+          style={{ imageRendering: zoom > 2 ? 'pixelated' : 'auto' }}
+        />
 
         {/* Gizmo overlay for interactive node controls */}
         {gizmoNode && imageInfo && (
@@ -902,7 +887,7 @@ export function PreviewViewport() {
             gizmo={gizmoNode.gizmo}
             imageWidth={rawForegroundImage?.originalWidth ?? rawBackgroundImage?.originalWidth ?? canvasSettings.width}
             imageHeight={rawForegroundImage?.originalHeight ?? rawBackgroundImage?.originalHeight ?? canvasSettings.height}
-            bboxOffset={{ x: -combinedBBox.minX, y: -combinedBBox.minY }}
+            canvasSize={{ width: canvasSettings.width, height: canvasSettings.height }}
             zoom={zoom}
             pan={pan}
             containerRef={containerRef}
