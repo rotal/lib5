@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useExecutionStore, useUiStore, useGraphStore } from '../../store';
-import { isFloatImage, floatToImageData, isGPUTexture } from '../../types/data';
+import { isFloatImage, floatToImageData, isGPUTexture, type FloatImage, type Transform2D, IDENTITY_TRANSFORM, transformPoint } from '../../types/data';
 import type { GPUTexture } from '../../types/gpu';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
 import { GizmoOverlay } from './GizmoOverlay';
@@ -32,11 +32,15 @@ export function PreviewViewport() {
   const [isDraggingSplitter, setIsDraggingSplitter] = useState(false);
   const [isNearSplitter, setIsNearSplitter] = useState(false);
   const [channelMode, setChannelMode] = useState<'rgba' | 'r' | 'g' | 'b' | 'a'>('rgba');
+  const [previewBgMode, setPreviewBgMode] = useState<'grid' | 'black'>('grid');
+  const [gizmoMode, setGizmoMode] = useState<'translate' | 'pivot'>('translate');
+  const [gizmoVisibility, setGizmoVisibility] = useState<'all' | 'translate' | 'rotate' | 'scale'>('all');
 
   // Refs to avoid stale closures during drag operations
   const panRef = useRef(pan);
   const zoomRef = useRef(zoom);
   const splitVerticalRef = useRef(previewSplitVertical);
+  const handleFitContentRef = useRef<(() => void) | null>(null);
   panRef.current = pan;
   zoomRef.current = zoom;
   splitVerticalRef.current = previewSplitVertical;
@@ -53,8 +57,10 @@ export function PreviewViewport() {
     }
   }, []);
 
-  // Handle keyboard shortcuts
+  // Handle keyboard shortcuts (only when preview is focused)
   // Slots 1 & 2 = foreground (mutually exclusive), Slot 3 = background
+  // F = frame/fit content to viewport
+  // Q/W/E/R = Maya-style gizmo tools (Q=pivot, W=move, E=rotate, R=scale)
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === '1') {
       setPreviewForeground(0);
@@ -65,6 +71,24 @@ export function PreviewViewport() {
     } else if (e.key === '3') {
       togglePreviewBackground();
       ensureOutputs(previewSlots[2]);
+    } else if (e.key === 'f' || e.key === 'F') {
+      handleFitContentRef.current?.();
+    } else if (e.key === 'q' || e.key === 'Q') {
+      // Q = Pivot mode (shows pivot marker only)
+      setGizmoMode('pivot');
+      setGizmoVisibility('translate');
+    } else if (e.key === 'w' || e.key === 'W') {
+      // W = Move tool (translate gizmo)
+      setGizmoMode('translate');
+      setGizmoVisibility('translate');
+    } else if (e.key === 'e' || e.key === 'E') {
+      // E = Rotate tool
+      setGizmoMode('translate');
+      setGizmoVisibility('rotate');
+    } else if (e.key === 'r' || e.key === 'R') {
+      // R = Scale tool
+      setGizmoMode('translate');
+      setGizmoVisibility('scale');
     }
   }, [togglePreviewBackground, setPreviewForeground, ensureOutputs, previewSlots]);
 
@@ -75,6 +99,7 @@ export function PreviewViewport() {
 
   // Get selected nodes and graph for gizmo detection
   const { selectedNodeIds, graph } = useGraphStore();
+  const canvasSettings = graph.canvas;
 
   // Determine which node should show a gizmo (if any)
   // Show gizmo for a selected node that is in a preview slot and has a gizmo definition
@@ -114,8 +139,16 @@ export function PreviewViewport() {
     return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Helper to get image data from node outputs
-  const getImageDataForNode = (nodeId: string | null): ImageData | null => {
+  // Result type for image with transform
+  interface ImageWithTransform {
+    imageData: ImageData;
+    transform: Transform2D;
+    originalWidth: number;
+    originalHeight: number;
+  }
+
+  // Helper to get image data and transform from node outputs
+  const getImageWithTransform = (nodeId: string | null): ImageWithTransform | null => {
     if (!nodeId) return null;
 
     const outputs = nodeOutputs[nodeId];
@@ -123,15 +156,31 @@ export function PreviewViewport() {
 
     for (const value of Object.values(outputs)) {
       if (value instanceof ImageData) {
-        return value;
+        return {
+          imageData: value,
+          transform: IDENTITY_TRANSFORM,
+          originalWidth: value.width,
+          originalHeight: value.height,
+        };
       }
       if (isFloatImage(value)) {
-        return floatToImageData(value);
+        const floatImg = value as FloatImage;
+        return {
+          imageData: floatToImageData(floatImg),
+          transform: floatImg.transform ?? IDENTITY_TRANSFORM,
+          originalWidth: floatImg.width,
+          originalHeight: floatImg.height,
+        };
       }
       if (isGPUTexture(value)) {
         const floatImage = downloadGPUTexture(value as GPUTexture);
         if (floatImage) {
-          return floatToImageData(floatImage);
+          return {
+            imageData: floatToImageData(floatImage),
+            transform: floatImage.transform ?? IDENTITY_TRANSFORM,
+            originalWidth: floatImage.width,
+            originalHeight: floatImage.height,
+          };
         }
       }
     }
@@ -187,19 +236,108 @@ export function PreviewViewport() {
     return out;
   };
 
-  // Compute image data directly (no memoization to avoid stale values)
-  const rawBackgroundImageData = getImageDataForNode(backgroundNodeId);
-  const rawForegroundImageData = getImageDataForNode(foregroundNodeId);
-  const backgroundImageData = channelMode === 'rgba' ? rawBackgroundImageData : isolateChannel(rawBackgroundImageData, channelMode);
-  const foregroundImageData = channelMode === 'rgba' ? rawForegroundImageData : isolateChannel(rawForegroundImageData, channelMode);
+  // Compute image data with transforms directly (no memoization to avoid stale values)
+  const rawBackgroundImage = getImageWithTransform(backgroundNodeId);
+  const rawForegroundImage = getImageWithTransform(foregroundNodeId);
+
+  // Apply channel isolation if needed
+  const backgroundImageData = rawBackgroundImage
+    ? (channelMode === 'rgba' ? rawBackgroundImage.imageData : isolateChannel(rawBackgroundImage.imageData, channelMode))
+    : null;
+  const foregroundImageData = rawForegroundImage
+    ? (channelMode === 'rgba' ? rawForegroundImage.imageData : isolateChannel(rawForegroundImage.imageData, channelMode))
+    : null;
+
+  const backgroundTransform = rawBackgroundImage?.transform ?? IDENTITY_TRANSFORM;
+  const foregroundTransform = rawForegroundImage?.transform ?? IDENTITY_TRANSFORM;
 
   // Determine what to display
   const hasBackground = backgroundImageData !== null;
   const hasForeground = foregroundImageData !== null;
   const showComparison = hasBackground && hasForeground;
 
-  // Get the primary image for sizing (use raw data, not channel-filtered)
-  const primaryImageData = rawBackgroundImageData || rawForegroundImageData;
+  // Helper to calculate transformed bounding box of an image
+  const getTransformedBBox = (width: number, height: number, transform: Transform2D) => {
+    // Transform all 4 corners
+    const corners = [
+      transformPoint(transform, 0, 0),
+      transformPoint(transform, width, 0),
+      transformPoint(transform, width, height),
+      transformPoint(transform, 0, height),
+    ];
+    // Find min/max
+    const xs = corners.map(c => c.x);
+    const ys = corners.map(c => c.y);
+    return {
+      minX: Math.min(...xs),
+      minY: Math.min(...ys),
+      maxX: Math.max(...xs),
+      maxY: Math.max(...ys),
+    };
+  };
+
+  // Calculate combined bounding box of canvas and all transformed images
+  const combinedBBox = useMemo(() => {
+    // Start with canvas bounds
+    let minX = 0, minY = 0;
+    let maxX = canvasSettings.width, maxY = canvasSettings.height;
+
+    // Expand to include background image bbox
+    if (rawBackgroundImage) {
+      const bbox = getTransformedBBox(
+        rawBackgroundImage.originalWidth,
+        rawBackgroundImage.originalHeight,
+        backgroundTransform
+      );
+      minX = Math.min(minX, bbox.minX);
+      minY = Math.min(minY, bbox.minY);
+      maxX = Math.max(maxX, bbox.maxX);
+      maxY = Math.max(maxY, bbox.maxY);
+    }
+
+    // Expand to include foreground image bbox
+    if (rawForegroundImage) {
+      const bbox = getTransformedBBox(
+        rawForegroundImage.originalWidth,
+        rawForegroundImage.originalHeight,
+        foregroundTransform
+      );
+      minX = Math.min(minX, bbox.minX);
+      minY = Math.min(minY, bbox.minY);
+      maxX = Math.max(maxX, bbox.maxX);
+      maxY = Math.max(maxY, bbox.maxY);
+    }
+
+    return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+  }, [canvasSettings, rawBackgroundImage, rawForegroundImage, backgroundTransform, foregroundTransform]);
+
+  const primaryImageData = backgroundImageData || foregroundImageData;
+
+  // Helper to draw an image with its transform applied (offset by bbox origin)
+  const drawImageWithTransform = (
+    ctx: CanvasRenderingContext2D,
+    imageData: ImageData,
+    transform: Transform2D,
+    offsetX: number,
+    offsetY: number,
+  ) => {
+    // Create temp canvas with raw image data
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = imageData.width;
+    tempCanvas.height = imageData.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    if (!tempCtx) return;
+    tempCtx.putImageData(imageData, 0, 0);
+
+    // Apply transform with offset and draw
+    ctx.save();
+    ctx.setTransform(
+      transform.a, transform.c, transform.b, transform.d,
+      transform.tx + offsetX, transform.ty + offsetY
+    );
+    ctx.drawImage(tempCanvas, 0, 0);
+    ctx.restore();
+  };
 
   // Render to canvas
   useEffect(() => {
@@ -242,36 +380,33 @@ export function PreviewViewport() {
       return;
     }
 
-    const width = primaryImageData.width;
-    const height = primaryImageData.height;
+    // Use combined bounding box for viewport size
+    const width = Math.ceil(combinedBBox.width);
+    const height = Math.ceil(combinedBBox.height);
+    const offsetX = -combinedBBox.minX;
+    const offsetY = -combinedBBox.minY;
     canvas.width = width;
     canvas.height = height;
 
-    // Draw checkerboard pattern for transparency
-    const tileSize = 8;
-    for (let y = 0; y < height; y += tileSize) {
-      for (let x = 0; x < width; x += tileSize) {
-        ctx.fillStyle = ((x + y) / tileSize) % 2 === 0 ? '#404040' : '#303030';
-        ctx.fillRect(x, y, tileSize, tileSize);
-      }
-    }
+    // Clear buffer - transparent so container background shows through
+    ctx.clearRect(0, 0, width, height);
 
     if (showComparison) {
-      // Draw background fully first
-      ctx.putImageData(backgroundImageData!, 0, 0);
+      // Draw background with transform
+      drawImageWithTransform(ctx, backgroundImageData!, backgroundTransform, offsetX, offsetY);
 
-      // Create temp canvas for foreground (putImageData ignores clipping, so we use drawImage)
+      // Create temp canvas for foreground with transform
       const tempCanvas = document.createElement('canvas');
       tempCanvas.width = width;
       tempCanvas.height = height;
       const tempCtx = tempCanvas.getContext('2d');
 
       if (tempCtx) {
-        tempCtx.putImageData(foregroundImageData!, 0, 0);
+        // Clear temp canvas - transparent so container background shows through
+        tempCtx.clearRect(0, 0, width, height);
+        drawImageWithTransform(tempCtx, foregroundImageData!, foregroundTransform, offsetX, offsetY);
 
         // Clip foreground based on split position
-        // Normal: foreground on left/top of splitter
-        // Reversed: foreground on right/bottom of splitter (inverted mask)
         ctx.save();
         ctx.beginPath();
         if (previewSplitVertical) {
@@ -309,25 +444,33 @@ export function PreviewViewport() {
       }
       ctx.stroke();
     } else if (hasBackground) {
-      ctx.putImageData(backgroundImageData!, 0, 0);
+      drawImageWithTransform(ctx, backgroundImageData!, backgroundTransform, offsetX, offsetY);
     } else if (hasForeground) {
-      ctx.putImageData(foregroundImageData!, 0, 0);
+      drawImageWithTransform(ctx, foregroundImageData!, foregroundTransform, offsetX, offsetY);
     }
 
-    setImageInfo({ width, height });
-  }, [nodeOutputs, backgroundNodeId, foregroundNodeId, previewSplitPosition, previewSplitVertical, previewSplitReversed, downloadGPUTexture, channelMode]);
+    // Draw canvas border to indicate project resolution bounds
+    // The canvas origin (0,0) is at offsetX, offsetY in the combined bbox coordinate system
+    ctx.strokeStyle = '#ffcc00';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4]);
+    ctx.strokeRect(offsetX, offsetY, canvasSettings.width, canvasSettings.height);
+    ctx.setLineDash([]);
 
-  // Auto-fit on first load or when image changes
+    setImageInfo({ width, height });
+  }, [nodeOutputs, backgroundNodeId, foregroundNodeId, previewSplitPosition, previewSplitVertical, previewSplitReversed, downloadGPUTexture, channelMode, canvasSettings, combinedBBox]);
+
+  // Auto-fit on first load or when canvas size changes
   useEffect(() => {
-    if (!primaryImageData || !containerRef.current) return;
+    if (!containerRef.current) return;
 
     const fitToContainer = () => {
       const container = containerRef.current!;
       const containerWidth = container.clientWidth - 32;
       const containerHeight = container.clientHeight - 32;
 
-      const scaleX = containerWidth / primaryImageData.width;
-      const scaleY = containerHeight / primaryImageData.height;
+      const scaleX = containerWidth / canvasSettings.width;
+      const scaleY = containerHeight / canvasSettings.height;
       const scale = Math.min(scaleX, scaleY, 1);
 
       setZoom(scale);
@@ -335,7 +478,7 @@ export function PreviewViewport() {
     };
 
     fitToContainer();
-  }, [primaryImageData?.width, primaryImageData?.height]);
+  }, [canvasSettings.width, canvasSettings.height]);
 
   // Zoom handlers
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -448,19 +591,44 @@ export function PreviewViewport() {
   }, [pan, checkNearSplitter, screenToImageCoords, setPreviewSplitPosition]);
 
   const handleFit = useCallback(() => {
-    if (!primaryImageData || !containerRef.current) return;
+    if (!containerRef.current) return;
 
     const container = containerRef.current;
     const containerWidth = container.clientWidth - 32;
     const containerHeight = container.clientHeight - 32;
 
-    const scaleX = containerWidth / primaryImageData.width;
-    const scaleY = containerHeight / primaryImageData.height;
+    const scaleX = containerWidth / canvasSettings.width;
+    const scaleY = containerHeight / canvasSettings.height;
     const scale = Math.min(scaleX, scaleY);
 
     setZoom(scale);
     setPan({ x: 0, y: 0 });
-  }, [primaryImageData]);
+  }, [canvasSettings]);
+
+  // Fit to the actual content (transformed image bounding box)
+  const handleFitContent = useCallback(() => {
+    if (!containerRef.current) return;
+
+    const container = containerRef.current;
+    const containerWidth = container.clientWidth - 32;
+    const containerHeight = container.clientHeight - 32;
+
+    // Use combinedBBox which includes the transformed image bounds
+    const contentWidth = combinedBBox.width;
+    const contentHeight = combinedBBox.height;
+
+    if (contentWidth <= 0 || contentHeight <= 0) return;
+
+    const scaleX = containerWidth / contentWidth;
+    const scaleY = containerHeight / contentHeight;
+    const scale = Math.min(scaleX, scaleY, 10); // Cap at 10x zoom
+
+    setZoom(scale);
+    setPan({ x: 0, y: 0 });
+  }, [combinedBBox]);
+
+  // Update ref for keyboard handler
+  handleFitContentRef.current = handleFitContent;
 
   const handleActualSize = useCallback(() => {
     setZoom(1);
@@ -570,13 +738,82 @@ export function PreviewViewport() {
             <option value="b">B</option>
             <option value="a">A</option>
           </select>
+          {/* Background toggle */}
+          <button
+            onClick={() => setPreviewBgMode(previewBgMode === 'grid' ? 'black' : 'grid')}
+            className={`px-2 py-0.5 text-xs rounded transition-colors ${
+              previewBgMode === 'grid'
+                ? 'bg-editor-surface-light text-editor-text'
+                : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light'
+            }`}
+            title={`Background: ${previewBgMode === 'grid' ? 'Grid' : 'Black'} (click to toggle)`}
+          >
+            {previewBgMode === 'grid' ? '▦' : '■'}
+          </button>
+          {/* Gizmo tool buttons (Maya-style Q/W/E/R) */}
+          {gizmoNode && (
+            <div className="flex items-center gap-0.5 ml-1">
+              <button
+                onClick={() => { setGizmoMode('pivot'); setGizmoVisibility('translate'); }}
+                className={`w-5 h-5 text-xs rounded transition-colors ${
+                  gizmoMode === 'pivot'
+                    ? 'bg-orange-500/50 text-orange-200'
+                    : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
+                }`}
+                title="Pivot tool (Q)"
+              >
+                Q
+              </button>
+              <button
+                onClick={() => { setGizmoMode('translate'); setGizmoVisibility('translate'); }}
+                className={`w-5 h-5 text-xs rounded transition-colors ${
+                  gizmoMode === 'translate' && gizmoVisibility === 'translate'
+                    ? 'bg-blue-500/50 text-blue-200'
+                    : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
+                }`}
+                title="Move tool (W)"
+              >
+                W
+              </button>
+              <button
+                onClick={() => { setGizmoMode('translate'); setGizmoVisibility('rotate'); }}
+                className={`w-5 h-5 text-xs rounded transition-colors ${
+                  gizmoVisibility === 'rotate'
+                    ? 'bg-green-500/50 text-green-200'
+                    : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
+                }`}
+                title="Rotate tool (E)"
+              >
+                E
+              </button>
+              <button
+                onClick={() => { setGizmoMode('translate'); setGizmoVisibility('scale'); }}
+                className={`w-5 h-5 text-xs rounded transition-colors ${
+                  gizmoVisibility === 'scale'
+                    ? 'bg-yellow-500/50 text-yellow-200'
+                    : 'bg-editor-surface-light text-editor-text-dim hover:text-editor-text'
+                }`}
+                title="Scale tool (R)"
+              >
+                R
+              </button>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={handleFit}
             className="px-2 py-1 text-xs text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light rounded transition-colors"
+            title="Fit to canvas bounds"
           >
             Fit
+          </button>
+          <button
+            onClick={handleFitContent}
+            className="px-2 py-1 text-xs text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light rounded transition-colors"
+            title="Frame content (F)"
+          >
+            Frame
           </button>
           <button
             onClick={handleActualSize}
@@ -600,6 +837,12 @@ export function PreviewViewport() {
             : isNearSplitter
               ? (previewSplitVertical ? 'col-resize' : 'row-resize')
               : 'grab',
+          backgroundColor: previewBgMode === 'grid' ? '#404040' : '#000000',
+          backgroundImage: previewBgMode === 'grid'
+            ? 'linear-gradient(45deg, #303030 25%, transparent 25%), linear-gradient(-45deg, #303030 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #303030 75%), linear-gradient(-45deg, transparent 75%, #303030 75%)'
+            : undefined,
+          backgroundSize: previewBgMode === 'grid' ? '16px 16px' : undefined,
+          backgroundPosition: previewBgMode === 'grid' ? '0 0, 0 8px, 8px -8px, -8px 0px' : undefined,
         }}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
@@ -624,13 +867,42 @@ export function PreviewViewport() {
           <GizmoOverlay
             node={gizmoNode.node}
             gizmo={gizmoNode.gizmo}
-            imageWidth={imageInfo.width}
-            imageHeight={imageInfo.height}
+            imageWidth={rawForegroundImage?.originalWidth ?? rawBackgroundImage?.originalWidth ?? canvasSettings.width}
+            imageHeight={rawForegroundImage?.originalHeight ?? rawBackgroundImage?.originalHeight ?? canvasSettings.height}
+            bboxOffset={{ x: -combinedBBox.minX, y: -combinedBBox.minY }}
             zoom={zoom}
             pan={pan}
             containerRef={containerRef}
             canvasRef={canvasRef}
+            gizmoMode={gizmoMode}
+            gizmoVisibility={gizmoVisibility}
           />
+        )}
+
+        {/* Keyboard shortcuts HUD */}
+        {gizmoNode && (
+          <div className="absolute bottom-3 left-3 pointer-events-none">
+            <div className="bg-black/40 backdrop-blur-sm rounded-lg px-3 py-2 text-xs">
+              <div className="flex gap-4">
+                <div className={`flex items-center gap-1.5 ${gizmoMode === 'pivot' ? 'text-orange-300' : 'text-white/50'}`}>
+                  <span className={`w-5 h-5 flex items-center justify-center rounded ${gizmoMode === 'pivot' ? 'bg-orange-500/60' : 'bg-white/20'}`}>Q</span>
+                  <span>Pivot</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${gizmoMode === 'translate' && gizmoVisibility === 'translate' ? 'text-blue-300' : 'text-white/50'}`}>
+                  <span className={`w-5 h-5 flex items-center justify-center rounded ${gizmoMode === 'translate' && gizmoVisibility === 'translate' ? 'bg-blue-500/60' : 'bg-white/20'}`}>W</span>
+                  <span>Move</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${gizmoVisibility === 'rotate' ? 'text-green-300' : 'text-white/50'}`}>
+                  <span className={`w-5 h-5 flex items-center justify-center rounded ${gizmoVisibility === 'rotate' ? 'bg-green-500/60' : 'bg-white/20'}`}>E</span>
+                  <span>Rotate</span>
+                </div>
+                <div className={`flex items-center gap-1.5 ${gizmoVisibility === 'scale' ? 'text-yellow-300' : 'text-white/50'}`}>
+                  <span className={`w-5 h-5 flex items-center justify-center rounded ${gizmoVisibility === 'scale' ? 'bg-yellow-500/60' : 'bg-white/20'}`}>R</span>
+                  <span>Scale</span>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {isExecuting && (
@@ -647,6 +919,8 @@ export function PreviewViewport() {
       <div className="px-3 py-1 border-t border-editor-border bg-editor-surface text-xs text-editor-text-dim flex justify-between">
         <span>
           {imageInfo ? `${imageInfo.width} × ${imageInfo.height}` : 'No image'}
+          {' | '}
+          <span className="text-yellow-500">Canvas: {canvasSettings.width} × {canvasSettings.height}</span>
         </span>
         <span>
           FG: {foregroundNodeId ? '✓' : '—'} | BG: {backgroundNodeId ? '✓' : '—'}

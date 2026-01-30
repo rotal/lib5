@@ -202,7 +202,16 @@ export const useGraphStore = create<GraphState & GraphActions>()(
     set(produce((state: GraphState) => {
       const node = state.graph.nodes[nodeId];
       if (node) {
-        node.parameters[paramId] = value;
+        // Check for NaN values and reset to default
+        let finalValue = value;
+        if (typeof value === 'number' && Number.isNaN(value)) {
+          // Get default value from node definition
+          const def = NodeRegistry.get(node.type);
+          const paramDef = def?.parameters.find(p => p.id === paramId);
+          finalValue = paramDef?.default ?? 0;
+          console.warn(`[GraphStore] NaN detected for ${paramId}, resetting to default:`, finalValue);
+        }
+        node.parameters[paramId] = finalValue;
       }
     }));
   },
