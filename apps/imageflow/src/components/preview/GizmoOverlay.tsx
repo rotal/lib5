@@ -1,5 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { useGraph } from '../../hooks/useGraph';
+import { useGraphStore, useExecutionStore, useUiStore } from '../../store';
+import { getDownstreamNodes } from '../../core/graph/TopologicalSort';
 import type { GizmoDefinition, GizmoHandle, NodeInstance } from '../../types/node';
 
 interface GizmoOverlayProps {
@@ -324,9 +326,15 @@ export function GizmoOverlay({
         const [offsetX, offsetY] = gizmo.translateParams;
         startParams[offsetX] = (node.parameters[offsetX] as number) ?? 0;
         startParams[offsetY] = (node.parameters[offsetY] as number) ?? 0;
-        startParams['_scaleX'] = (node.parameters.scaleX as number) ?? 1;
-        startParams['_scaleY'] = (node.parameters.scaleY as number) ?? 1;
-        startParams['_angle'] = (node.parameters.angle as number) ?? 0;
+
+        // Use gizmo param names to read scale/angle values
+        if (gizmo.scaleParams) {
+          startParams['_scaleX'] = (node.parameters[gizmo.scaleParams[0]] as number) ?? 1;
+          startParams['_scaleY'] = (node.parameters[gizmo.scaleParams[1]] as number) ?? 1;
+        }
+        if (gizmo.rotationParam) {
+          startParams['_angle'] = (node.parameters[gizmo.rotationParam] as number) ?? 0;
+        }
       }
 
       // Compute gizmo screen position so visual feedback matches parameter-derived position
@@ -466,45 +474,69 @@ export function GizmoOverlay({
         const newPivotY = startPivotY + deltaY;
 
         // Calculate offset compensation to keep image stationary
-        // When pivot changes, we need: newOffset = oldOffset + (oldPivot - newPivot) - RS*(oldPivot - newPivot)
-        // Where RS is the combined rotation and scale transform
-        if (gizmo.translateParams && gizmo.rotationParam && gizmo.scaleParams) {
+        // When pivot changes, the transform P' = R*S*(P - pivot) + pivot + offset
+        // To keep image in same place: newOffset = oldOffset + d - R*S*d
+        // where d = oldPivot - newPivot (in image-local pixel coordinates)
+        if (gizmo.translateParams) {
           const [offsetXParam, offsetYParam] = gizmo.translateParams;
-          const [scaleXParam, scaleYParam] = gizmo.scaleParams;
 
           const startOffsetX = dragState.startParams[offsetXParam] ?? 0;
           const startOffsetY = dragState.startParams[offsetYParam] ?? 0;
-          const sX = (node.parameters[scaleXParam] as number) ?? 1;
-          const sY = (node.parameters[scaleYParam] as number) ?? 1;
-          const aRad = angleDeg * Math.PI / 180;
 
-          // Pivot delta in pixels
+          // Use stored start values for consistency (scale/angle don't change during pivot drag)
+          const sX = dragState.startParams['_scaleX'] ?? 1;
+          const sY = dragState.startParams['_scaleY'] ?? 1;
+          const aRad = ((dragState.startParams['_angle'] ?? 0) * Math.PI) / 180;
+
+          // Pivot delta in pixels: d = oldPivot - newPivot
           const dpx = (startPivotX - newPivotX) * imageWidth;
           const dpy = (startPivotY - newPivotY) * imageHeight;
 
-          // Apply rotation and scale to the delta: RS * delta
+          // Apply R*S to the delta vector
+          // For transform P' = R*S*(P - pivot) + pivot + offset:
+          // R*S*d where R = [[cos, -sin], [sin, cos]] and S = [[sX, 0], [0, sY]]
+          // R*S = [[cos*sX, -sin*sY], [sin*sX, cos*sY]]
           const c = Math.cos(aRad);
           const s = Math.sin(aRad);
-          const rsDpx = (c * sX * dpx - s * sY * dpy);
-          const rsDpy = (s * sX * dpx + c * sY * dpy);
+          const rsDpx = c * sX * dpx - s * sY * dpy;
+          const rsDpy = s * sX * dpx + c * sY * dpy;
 
-          // Offset compensation: (oldPivot - newPivot) - RS*(oldPivot - newPivot)
-          const compensationX = dpx - rsDpx;
-          const compensationY = dpy - rsDpy;
+          // Offset compensation: newOffset = oldOffset + d - R*S*d
+          const newOffsetX = startOffsetX + dpx - rsDpx;
+          const newOffsetY = startOffsetY + dpy - rsDpy;
 
-          const newOffsetX = startOffsetX + compensationX;
-          const newOffsetY = startOffsetY + compensationY;
+          // BATCH UPDATE: Update all parameters in the store first, then trigger execution once.
+          // Using updateNodeParameter for each would trigger execution on the first call,
+          // before other parameters are updated, causing incorrect rendering.
+          const graphStore = useGraphStore.getState();
 
-          if (Number.isFinite(newOffsetX) && Number.isFinite(newOffsetY)) {
-            updateNodeParameter(node.id, offsetXParam, newOffsetX);
-            updateNodeParameter(node.id, offsetYParam, newOffsetY);
+          // Update all parameters directly in the store (no execution trigger)
+          if (Number.isFinite(newPivotX) && Number.isFinite(newPivotY)) {
+            if (axis !== 'y') graphStore.updateNodeParameter(node.id, pivotXParam, newPivotX);
+            if (axis !== 'x') graphStore.updateNodeParameter(node.id, pivotYParam, newPivotY);
           }
-        }
+          if (Number.isFinite(newOffsetX) && Number.isFinite(newOffsetY)) {
+            graphStore.updateNodeParameter(node.id, offsetXParam, newOffsetX);
+            graphStore.updateNodeParameter(node.id, offsetYParam, newOffsetY);
+          }
 
-        // Update pivot values (no clamping - pivot can be outside image bounds)
-        if (Number.isFinite(newPivotX) && Number.isFinite(newPivotY)) {
-          if (axis !== 'y') updateNodeParameter(node.id, pivotXParam, newPivotX);
-          if (axis !== 'x') updateNodeParameter(node.id, pivotYParam, newPivotY);
+          // Now trigger execution once with all updates applied
+          const freshGraph = useGraphStore.getState().graph;
+          const exec = useExecutionStore.getState();
+          const uiStore = useUiStore.getState();
+          const dirtyNodes = [node.id, ...getDownstreamNodes(freshGraph, node.id)];
+          exec.markNodesDirty(dirtyNodes);
+
+          if (uiStore.liveEdit && !exec.isExecuting) {
+            exec.updateEngineGraph(freshGraph);
+            exec.execute();
+          }
+        } else {
+          // No translateParams - just update pivot using normal method
+          if (Number.isFinite(newPivotX) && Number.isFinite(newPivotY)) {
+            if (axis !== 'y') updateNodeParameter(node.id, pivotXParam, newPivotX);
+            if (axis !== 'x') updateNodeParameter(node.id, pivotYParam, newPivotY);
+          }
         }
       }
       // Scale drag (edges and corners)
