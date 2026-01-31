@@ -37,21 +37,21 @@ export function PreviewViewport() {
   const [isNearSplitter, setIsNearSplitter] = useState(false);
   const [channelMode, setChannelMode] = useState<'rgba' | 'r' | 'g' | 'b' | 'a'>('rgba');
   const [previewBgMode, setPreviewBgMode] = useState<'check' | 'grid' | 'black'>('check');
-  const [debugModes, setDebugModes] = useState<Set<'viewport' | 'image' | 'transform' | 'borders'>>(new Set());
-  const [debugDropdownOpen, setDebugDropdownOpen] = useState(false);
-  const debugDropdownRef = useRef<HTMLDivElement>(null);
+  const [hudModes, setHudModes] = useState<Set<'viewport' | 'image' | 'transform' | 'borders'>>(new Set());
+  const [hudDropdownOpen, setHudDropdownOpen] = useState(false);
+  const hudDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close debug dropdown on click outside
+  // Close HUD dropdown on click outside
   useEffect(() => {
-    if (!debugDropdownOpen) return;
+    if (!hudDropdownOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (debugDropdownRef.current && !debugDropdownRef.current.contains(e.target as Node)) {
-        setDebugDropdownOpen(false);
+      if (hudDropdownRef.current && !hudDropdownRef.current.contains(e.target as Node)) {
+        setHudDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [debugDropdownOpen]);
+  }, [hudDropdownOpen]);
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'pivot'>('translate');
   const [gizmoVisibility, setGizmoVisibility] = useState<'all' | 'translate' | 'rotate' | 'scale'>('all');
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -694,7 +694,7 @@ export function PreviewViewport() {
     if (showComparison) {
       // Draw background
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      if (debugModes.has('borders')) {
+      if (hudModes.has('borders')) {
         drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
       }
 
@@ -718,7 +718,7 @@ export function PreviewViewport() {
       }
       ctx.clip();
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
-      if (debugModes.has('borders')) {
+      if (hudModes.has('borders')) {
         drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
       }
       ctx.restore();
@@ -739,25 +739,27 @@ export function PreviewViewport() {
       ctx.stroke();
     } else if (hasBackground) {
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      if (debugModes.has('borders')) {
+      if (hudModes.has('borders')) {
         drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
       }
     } else if (hasForeground) {
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
-      if (debugModes.has('borders')) {
+      if (hudModes.has('borders')) {
         drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
       }
     }
 
-    // Draw canvas border to indicate project resolution bounds
-    ctx.strokeStyle = '#ffcc00';
-    ctx.lineWidth = 2 / zoom;
-    ctx.strokeRect(projectOffsetX, projectOffsetY, canvasSettings.width, canvasSettings.height);
+    // Draw canvas border to indicate project resolution bounds (only in viewport HUD mode)
+    if (hudModes.has('viewport')) {
+      ctx.strokeStyle = '#ffcc00';
+      ctx.lineWidth = 2 / zoom;
+      ctx.strokeRect(projectOffsetX, projectOffsetY, canvasSettings.width, canvasSettings.height);
+    }
 
     ctx.restore();
 
     setImageInfo({ width: canvasSettings.width, height: canvasSettings.height });
-  }, [nodeOutputs, backgroundNodeId, foregroundNodeId, previewSplitPosition, previewSplitVertical, previewSplitReversed, previewForegroundSlot, downloadGPUTexture, channelMode, canvasSettings, containerSize, zoom, pan, foregroundTransform, backgroundTransform, dragTransform, gizmoNode, debugModes]);
+  }, [nodeOutputs, backgroundNodeId, foregroundNodeId, previewSplitPosition, previewSplitVertical, previewSplitReversed, previewForegroundSlot, downloadGPUTexture, channelMode, canvasSettings, containerSize, zoom, pan, foregroundTransform, backgroundTransform, dragTransform, gizmoNode, hudModes]);
 
   // Auto-fit on first load or when canvas size changes
   useEffect(() => {
@@ -1068,20 +1070,20 @@ export function PreviewViewport() {
             <option value="b">B</option>
             <option value="a">A</option>
           </select>
-          {/* Debug mode dropdown */}
-          <div className="relative" ref={debugDropdownRef}>
+          {/* HUD mode dropdown */}
+          <div className="relative" ref={hudDropdownRef}>
             <button
-              onClick={() => setDebugDropdownOpen(!debugDropdownOpen)}
+              onClick={() => setHudDropdownOpen(!hudDropdownOpen)}
               className={`px-1.5 py-0.5 text-xs rounded border cursor-pointer focus:outline-none focus:border-editor-accent ${
-                debugModes.size > 0
+                hudModes.size > 0
                   ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-300 font-bold'
                   : 'bg-editor-surface-light border-editor-border text-editor-text-dim'
               }`}
-              title="Debug overlay"
+              title="HUD overlay"
             >
-              Debug
+              HUD
             </button>
-            {debugDropdownOpen && (
+            {hudDropdownOpen && (
               <div className="absolute top-full left-0 mt-1 bg-editor-surface-solid border border-editor-border rounded shadow-lg z-50 min-w-[100px]">
                 {(['viewport', 'image', 'transform', 'borders'] as const).map((mode) => (
                   <label
@@ -1090,15 +1092,15 @@ export function PreviewViewport() {
                   >
                     <input
                       type="checkbox"
-                      checked={debugModes.has(mode)}
+                      checked={hudModes.has(mode)}
                       onChange={(e) => {
-                        const newModes = new Set(debugModes);
+                        const newModes = new Set(hudModes);
                         if (e.target.checked) {
                           newModes.add(mode);
                         } else {
                           newModes.delete(mode);
                         }
-                        setDebugModes(newModes);
+                        setHudModes(newModes);
                       }}
                       className="w-3 h-3"
                     />
@@ -1185,24 +1187,24 @@ export function PreviewViewport() {
           style={{ imageRendering: zoom > 4 ? 'pixelated' : 'auto' }}
         />
 
-        {/* Debug text overlay */}
-        {debugModes.size > 0 && (
+        {/* HUD text overlay */}
+        {hudModes.size > 0 && (
           <div className="absolute top-2 left-2 bg-black/80 text-green-400 text-[10px] px-3 py-2 rounded font-mono pointer-events-none space-y-0.5 max-w-[350px]">
-            {debugModes.has('viewport') && (
+            {hudModes.has('viewport') && (
               <>
                 <div className="text-yellow-400 font-bold">Viewport</div>
                 <div>Container: {containerSize.width}×{containerSize.height}</div>
                 <div>Zoom: {(zoom * 100).toFixed(1)}% | Pan: {pan.x.toFixed(0)}, {pan.y.toFixed(0)}</div>
               </>
             )}
-            {debugModes.has('image') && (
+            {hudModes.has('image') && (
               <>
                 <div className="text-yellow-400 font-bold mt-1">Canvas</div>
                 <div>Size: {canvasSettings.width}×{canvasSettings.height}</div>
                 <div>BBox: [{calculatedBBox.minX.toFixed(0)},{calculatedBBox.minY.toFixed(0)}] {calculatedBBox.width.toFixed(0)}×{calculatedBBox.height.toFixed(0)}</div>
               </>
             )}
-            {debugModes.has('transform') && (
+            {hudModes.has('transform') && (
               <>
                 <div className="text-yellow-400 font-bold mt-1">Canvas</div>
                 <div>Size: {canvasSettings.width}×{canvasSettings.height}</div>
