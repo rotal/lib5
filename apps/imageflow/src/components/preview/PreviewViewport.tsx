@@ -1231,11 +1231,11 @@ export function PreviewViewport() {
                 </button>
                 {/* Individual border options */}
                 {([
-                  { id: 'slot1', label: 'Slot 1' },
-                  { id: 'slot2', label: 'Slot 2' },
-                  { id: 'slot3', label: 'Slot 3' },
-                  { id: 'canvas', label: 'Canvas' },
-                ] as const).map(({ id, label }) => (
+                  { id: 'slot1', label: 'Slot 1', colorIndex: 0 },
+                  { id: 'slot2', label: 'Slot 2', colorIndex: 1 },
+                  { id: 'slot3', label: 'Slot 3', colorIndex: 2 },
+                  { id: 'canvas', label: 'Canvas', color: '#ffcc00' },
+                ] as const).map(({ id, label, colorIndex, color }) => (
                   <button
                     key={id}
                     onClick={() => {
@@ -1247,14 +1247,15 @@ export function PreviewViewport() {
                       }
                       setBorderModes(newModes);
                     }}
-                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-all duration-100 pl-7 ${
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-all duration-100 ${
                       borderModes.has(id)
                         ? 'text-editor-text'
                         : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
                     }`}
                   >
+                    <div className="w-4 h-4 border-2" style={{ borderColor: color ?? PREVIEW_SLOT_COLORS[colorIndex ?? 0] }} />
+                    <span className="flex-1 text-left">{label}</span>
                     <span className="w-4 text-center text-[10px]">{borderModes.has(id) ? '✓' : ''}</span>
-                    <span>{label}</span>
                   </button>
                 ))}
             </div>
