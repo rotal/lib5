@@ -570,13 +570,15 @@ export interface BakeTransformParams {
 
 /**
  * Apply/bake a transform into a FloatImage by resampling pixels.
+ * Creates a transform from the given parameters, attaches it to the image,
+ * and then bakes it using applyTransformToImage.
  * Output is sized to fit the transformed content (AABB).
  * Returns image with a translation transform to maintain position.
  * Uses bilinear interpolation for smooth results.
  */
 export function bakeTransform(image: FloatImage, params: BakeTransformParams): FloatImage {
   const { translateX, translateY, scaleX, scaleY, angleDeg, pivotX, pivotY } = params;
-  const { width: srcW, height: srcH, data: src } = image;
+  const { width: srcW, height: srcH } = image;
 
   // Pivot point in pixel coordinates (relative to image)
   const pivotPxX = srcW * pivotX;
@@ -591,97 +593,16 @@ export function bakeTransform(image: FloatImage, params: BakeTransformParams): F
     return cloneFloatImage(image);
   }
 
-  // Transform all 4 corners to find bounding box of transformed content
-  const corners = [
-    transformPoint(transform, 0, 0),
-    transformPoint(transform, srcW, 0),
-    transformPoint(transform, srcW, srcH),
-    transformPoint(transform, 0, srcH),
-  ];
-
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const c of corners) {
-    minX = Math.min(minX, c.x);
-    minY = Math.min(minY, c.y);
-    maxX = Math.max(maxX, c.x);
-    maxY = Math.max(maxY, c.y);
-  }
-
-  // Round to integer bounds
-  minX = Math.floor(minX);
-  minY = Math.floor(minY);
-  maxX = Math.ceil(maxX);
-  maxY = Math.ceil(maxY);
-
-  // Output dimensions = bounding box of transformed content
-  const dstW = maxX - minX;
-  const dstH = maxY - minY;
-
-  // Sanity check
-  if (dstW <= 0 || dstH <= 0 || dstW > 16384 || dstH > 16384) {
-    return cloneFloatImage(image);
-  }
-
-  const dst = new Float32Array(dstW * dstH * 4);
-  trackFloat32Array(dst, 'bakeTransform');
-
-  // Inverse transform maps output coords to source coords
-  const inv = invertTransform(transform);
-
-  // Get pixel from source with bilinear interpolation
-  const sampleSource = (sx: number, sy: number, channel: number): number => {
-    if (sx < 0 || sx >= srcW || sy < 0 || sy >= srcH) {
-      return 0; // Transparent black outside source bounds
-    }
-    const x0 = Math.floor(sx);
-    const y0 = Math.floor(sy);
-    const x1 = Math.min(x0 + 1, srcW - 1);
-    const y1 = Math.min(y0 + 1, srcH - 1);
-    const fx = sx - x0;
-    const fy = sy - y0;
-
-    const v00 = src[(y0 * srcW + x0) * 4 + channel];
-    const v10 = src[(y0 * srcW + x1) * 4 + channel];
-    const v01 = src[(y1 * srcW + x0) * 4 + channel];
-    const v11 = src[(y1 * srcW + x1) * 4 + channel];
-
-    const v0 = v00 * (1 - fx) + v10 * fx;
-    const v1 = v01 * (1 - fx) + v11 * fx;
-    return v0 * (1 - fy) + v1 * fy;
+  // Create a copy of the image with the transform attached, then bake it
+  const imageWithTransform: FloatImage = {
+    data: image.data,
+    width: image.width,
+    height: image.height,
+    transform: transform,
   };
 
-  // Fill destination buffer
-  for (let y = 0; y < dstH; y++) {
-    for (let x = 0; x < dstW; x++) {
-      // Output pixel position relative to AABB origin
-      const localX = x + minX;
-      const localY = y + minY;
-
-      // Map to source image coords
-      const srcX = inv.a * localX + inv.b * localY + inv.tx;
-      const srcY = inv.c * localX + inv.d * localY + inv.ty;
-
-      const dstIdx = (y * dstW + x) * 4;
-      for (let c = 0; c < 4; c++) {
-        dst[dstIdx + c] = sampleSource(srcX, srcY, c);
-      }
-    }
-  }
-
-  // The baked image's position is encoded as a translation transform.
-  // We must account for the preview's centering offset: it draws images at
-  // (-width/2, -height/2) before applying transforms. Since the baked image
-  // has different dimensions than the source, we need to adjust the translation.
-  // Formula: tx = minX + (dstW - srcW) / 2, ty = minY + (dstH - srcH) / 2
-  return {
-    data: dst,
-    width: dstW,
-    height: dstH,
-    transform: translateTransform(
-      minX + (dstW - srcW) / 2,
-      minY + (dstH - srcH) / 2
-    ),
-  };
+  // Use applyTransformToImage to do the actual baking (transparent black for out-of-bounds)
+  return applyTransformToImage(imageWithTransform, { r: 0, g: 0, b: 0, a: 0 });
 }
 
 export interface Selection {

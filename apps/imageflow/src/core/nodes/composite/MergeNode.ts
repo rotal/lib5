@@ -226,6 +226,11 @@ export const MergeNode = defineNode({
       }
     }
 
+    // Preserve transform from first input image
+    if (images[0].transform) {
+      outputImage.transform = images[0].transform;
+    }
+
     return { image: outputImage };
   },
 });

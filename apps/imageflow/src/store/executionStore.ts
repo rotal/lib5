@@ -9,6 +9,10 @@ import { getUpstreamNodes, getDownstreamNodes } from '../core/graph/TopologicalS
 interface ExecutionState {
   engine: GraphEngine | null;
   isExecuting: boolean;
+  /** Counter for concurrent executions - isExecuting is true when > 0 */
+  executingCount: number;
+  /** Set of nodes currently being executed (prevents duplicate execution) */
+  executingNodes: Set<string>;
   executionProgress: number;
   executionError: string | null;
   nodeStates: Record<string, NodeRuntimeState>;
@@ -49,6 +53,8 @@ interface ExecutionActions {
 export const useExecutionStore = create<ExecutionState & ExecutionActions>((set, get) => ({
   engine: null,
   isExecuting: false,
+  executingCount: 0,
+  executingNodes: new Set(),
   executionProgress: 0,
   executionError: null,
   nodeStates: {},
@@ -309,7 +315,7 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>((set,
   },
 
   requestOutput: async (nodeId) => {
-    const { engine, dirtyNodes, nodeOutputs } = get();
+    const { engine, dirtyNodes, nodeOutputs, executingNodes } = get();
     if (!engine) return null;
 
     // If not dirty, return cached output
@@ -317,9 +323,8 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>((set,
       return nodeOutputs[nodeId] || null;
     }
 
-    // Prevent concurrent executions
-    if (get().isExecuting) {
-      // Return stale cache while waiting
+    // If this specific node is already being executed, wait and return cache
+    if (executingNodes.has(nodeId)) {
       return nodeOutputs[nodeId] || null;
     }
 
@@ -330,7 +335,7 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>((set,
 
     // Recursively compute dirty upstream nodes first (in order)
     // We need to process them in topological order
-    const dirtyUpstream = Array.from(upstream).filter(id => dirtyNodes.has(id));
+    const dirtyUpstream = Array.from(upstream).filter(id => get().dirtyNodes.has(id));
 
     // Sort dirty upstream by topological order (simple: process all upstream first)
     for (const upId of dirtyUpstream) {
@@ -338,21 +343,49 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>((set,
       await get().requestOutput(upId);
     }
 
+    // Double-check if still dirty (may have been computed by another concurrent request)
+    if (!get().dirtyNodes.has(nodeId)) {
+      return get().nodeOutputs[nodeId] || null;
+    }
+
+    // Mark this node as executing
+    set((state) => ({
+      isExecuting: true,
+      executingCount: state.executingCount + 1,
+      executingNodes: new Set([...state.executingNodes, nodeId]),
+    }));
+
     // Now execute this node
     try {
-      set({ isExecuting: true });
       await engine.executeNode(nodeId);
 
-      // Clear dirty flag for this node
-      set((state) => ({
-        isExecuting: false,
-        dirtyNodes: new Set([...state.dirtyNodes].filter(id => id !== nodeId))
-      }));
+      // Clear dirty flag and executing state for this node
+      set((state) => {
+        const newExecutingNodes = new Set(state.executingNodes);
+        newExecutingNodes.delete(nodeId);
+        const newCount = state.executingCount - 1;
+        return {
+          isExecuting: newCount > 0,
+          executingCount: newCount,
+          executingNodes: newExecutingNodes,
+          dirtyNodes: new Set([...state.dirtyNodes].filter(id => id !== nodeId)),
+        };
+      });
 
       return get().nodeOutputs[nodeId] || null;
     } catch (error) {
       console.error('requestOutput failed for node:', nodeId, error);
-      set({ isExecuting: false });
+      // Clear executing state on error
+      set((state) => {
+        const newExecutingNodes = new Set(state.executingNodes);
+        newExecutingNodes.delete(nodeId);
+        const newCount = state.executingCount - 1;
+        return {
+          isExecuting: newCount > 0,
+          executingCount: newCount,
+          executingNodes: newExecutingNodes,
+        };
+      });
       return get().nodeOutputs[nodeId] || null;
     }
   },

@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useExecutionStore, useUiStore, useGraphStore, previewFrameCallbacks } from '../../store';
-import { isFloatImage, floatToImageData, isGPUTexture, type FloatImage, type Transform2D, isIdentityTransform, createPivotTransform } from '../../types/data';
+import { isFloatImage, floatToImageData, isGPUTexture, type FloatImage, type Transform2D, isIdentityTransform, createPivotTransform, invertTransform, transformPoint } from '../../types/data';
 import type { GPUTexture } from '../../types/gpu';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
 import { GizmoOverlay } from './GizmoOverlay';
@@ -577,20 +577,15 @@ export function PreviewViewport() {
           const pivotPxX = imageData.width / 2 + pivotNormX * imageData.width / 2;
           const pivotPxY = imageData.height / 2 + pivotNormY * imageData.height / 2;
 
-          // Extract rotation and scale from base transform matrix
-          // For transform [a, b, c, d]: scaleX = sqrt(a² + c²), scaleY = sqrt(b² + d²), angle = atan2(c, a)
-          const baseAngle = Math.atan2(transform.c, transform.a);
-          const baseScaleX = Math.sqrt(transform.a * transform.a + transform.c * transform.c);
-          const baseScaleY = Math.sqrt(transform.b * transform.b + transform.d * transform.d);
-
-          // Convert world-space translation to local space by applying inverse transform
-          // Inverse: first rotate by -angle, then scale by 1/scale
-          const cos = Math.cos(-baseAngle);
-          const sin = Math.sin(-baseAngle);
-          const rotatedTx = dragTransform.tx * cos - dragTransform.ty * sin;
-          const rotatedTy = dragTransform.tx * sin + dragTransform.ty * cos;
-          const localTx = rotatedTx / baseScaleX;
-          const localTy = rotatedTy / baseScaleY;
+          // Convert world-space translation to local space using proper inverse transform
+          // This handles rotation, scale, and skew correctly
+          const inv = invertTransform(transform);
+          // Transform the drag delta as a vector (direction only, not position)
+          // We transform (tx, ty) relative to origin, then subtract the origin transform
+          const worldOrigin = transformPoint(inv, 0, 0);
+          const worldDelta = transformPoint(inv, dragTransform.tx, dragTransform.ty);
+          const localTx = worldDelta.x - worldOrigin.x;
+          const localTy = worldDelta.y - worldOrigin.y;
 
           // Translate in local space (will appear as world space movement)
           ctx.translate(localTx, localTy);
