@@ -274,7 +274,7 @@ export function cloneFloatImage(source: FloatImage): FloatImage {
 
 /**
  * Apply/bake the transform into a FloatImage by resampling pixels.
- * Expands the canvas to fit transformed content plus padding for reverse transforms.
+ * Output is sized to fit the transformed content exactly.
  * Uses bilinear interpolation for smooth results.
  */
 export function applyTransformToImage(image: FloatImage): FloatImage {
@@ -306,22 +306,17 @@ export function applyTransformToImage(image: FloatImage): FloatImage {
     maxY = Math.max(maxY, c.y);
   }
 
-  // Calculate how much the content moved from original bounds
-  const deltaLeft = Math.max(0, -minX);
-  const deltaTop = Math.max(0, -minY);
-  const deltaRight = Math.max(0, maxX - srcW);
-  const deltaBottom = Math.max(0, maxY - srcH);
+  // Round to integer bounds
+  minX = Math.floor(minX);
+  minY = Math.floor(minY);
+  maxX = Math.ceil(maxX);
+  maxY = Math.ceil(maxY);
 
-  // Expand canvas symmetrically to allow reverse transforms
-  // Use the max displacement as padding on all sides
-  const maxDelta = Math.max(deltaLeft, deltaTop, deltaRight, deltaBottom);
-  const padding = Math.ceil(maxDelta);
+  // Output dimensions = bounding box of transformed content
+  const dstW = maxX - minX;
+  const dstH = maxY - minY;
 
-  // New canvas dimensions with symmetric padding
-  const dstW = srcW + padding * 2;
-  const dstH = srcH + padding * 2;
-
-  // Sanity check for extremely large transforms
+  // Sanity check
   if (dstW <= 0 || dstH <= 0 || dstW > 16384 || dstH > 16384) {
     return {
       data: new Float32Array(image.data),
@@ -332,7 +327,7 @@ export function applyTransformToImage(image: FloatImage): FloatImage {
 
   const dst = new Float32Array(dstW * dstH * 4);
 
-  // Inverse transform maps output coords to input coords
+  // Inverse transform maps world coords to source coords
   const inv = invertTransform(transform);
 
   // Get pixel from source with bilinear interpolation
@@ -358,16 +353,15 @@ export function applyTransformToImage(image: FloatImage): FloatImage {
   };
 
   // Fill destination buffer
-  // Output coords are offset by -padding to align with original image space
   for (let y = 0; y < dstH; y++) {
     for (let x = 0; x < dstW; x++) {
-      // Map output pixel to original image coordinate space
-      const origX = x - padding;
-      const origY = y - padding;
+      // Output pixel position in world coordinates
+      const worldX = x + minX;
+      const worldY = y + minY;
 
-      // Apply inverse transform to get source coordinates
-      const srcX = inv.a * origX + inv.b * origY + inv.tx;
-      const srcY = inv.c * origX + inv.d * origY + inv.ty;
+      // Map world coords to source image coords
+      const srcX = inv.a * worldX + inv.b * worldY + inv.tx;
+      const srcY = inv.c * worldX + inv.d * worldY + inv.ty;
 
       const dstIdx = (y * dstW + x) * 4;
       for (let c = 0; c < 4; c++) {
@@ -376,8 +370,8 @@ export function applyTransformToImage(image: FloatImage): FloatImage {
     }
   }
 
-  // Return expanded image without transform
-  // Content is now baked with padding, downstream transforms work on this larger canvas
+  // Return image sized to fit transformed content
+  // No transform attached - pixels are fully baked
   return {
     data: dst,
     width: dstW,
