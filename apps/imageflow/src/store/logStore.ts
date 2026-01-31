@@ -67,3 +67,52 @@ export const appLog = {
   error: (message: string, data?: unknown) => useLogStore.getState().error(message, data),
   clear: () => useLogStore.getState().clear(),
 };
+
+// Format argument for logging
+function formatArg(arg: unknown): string {
+  if (arg === null) return 'null';
+  if (arg === undefined) return 'undefined';
+  if (typeof arg === 'string') return arg;
+  if (typeof arg === 'number' || typeof arg === 'boolean') return String(arg);
+  if (arg instanceof Error) return `${arg.name}: ${arg.message}`;
+  try {
+    return JSON.stringify(arg);
+  } catch {
+    return String(arg);
+  }
+}
+
+// Store original console methods
+const originalConsole = {
+  log: console.log.bind(console),
+  info: console.info.bind(console),
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+  debug: console.debug.bind(console),
+};
+
+// Intercept console methods to capture logs
+console.log = (...args: unknown[]) => {
+  originalConsole.log(...args);
+  useLogStore.getState().info(args.map(formatArg).join(' '));
+};
+
+console.info = (...args: unknown[]) => {
+  originalConsole.info(...args);
+  useLogStore.getState().info(args.map(formatArg).join(' '));
+};
+
+console.warn = (...args: unknown[]) => {
+  originalConsole.warn(...args);
+  useLogStore.getState().warn(args.map(formatArg).join(' '));
+};
+
+console.error = (...args: unknown[]) => {
+  originalConsole.error(...args);
+  useLogStore.getState().error(args.map(formatArg).join(' '));
+};
+
+console.debug = (...args: unknown[]) => {
+  originalConsole.debug(...args);
+  useLogStore.getState().debug(args.map(formatArg).join(' '));
+};
