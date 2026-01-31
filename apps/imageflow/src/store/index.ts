@@ -9,4 +9,3 @@ export { useExecutionStore } from './executionStore';
 export { useHistoryStore } from './historyStore';
 export { useAuthStore } from './authStore';
 export { useCodeStore } from './codeStore';
-export { useLogStore, type LogLevel, type LogEntry } from './logStore';

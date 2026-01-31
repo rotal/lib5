@@ -242,7 +242,7 @@ export class PDFDocument {
     if (!fontDict) return fonts;
 
     const resolved = this.resolve(fontDict);
-    if (!isDict(resolved)) return fonts;
+    if (!isDict(resolved) || !resolved.entries) return fonts;
 
     for (const [name, value] of resolved.entries) {
       const font = this.resolve(value);

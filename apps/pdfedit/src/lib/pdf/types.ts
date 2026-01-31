@@ -147,31 +147,31 @@ export function getRef(v: PDFValue | undefined): PDFRef | undefined {
 }
 
 export function dictGet(dict: PDFDict, key: string): PDFValue | undefined {
-  return dict.entries.get(key);
+  return dict.entries?.get(key);
 }
 
 export function dictGetName(dict: PDFDict, key: string): string | undefined {
-  const v = dict.entries.get(key);
+  const v = dict.entries?.get(key);
   return v !== undefined ? getName(v) : undefined;
 }
 
 export function dictGetNumber(dict: PDFDict, key: string): number | undefined {
-  const v = dict.entries.get(key);
+  const v = dict.entries?.get(key);
   return v !== undefined ? getNumber(v) : undefined;
 }
 
 export function dictGetArray(dict: PDFDict, key: string): PDFArray | undefined {
-  const v = dict.entries.get(key);
+  const v = dict.entries?.get(key);
   return v !== undefined ? getArray(v) : undefined;
 }
 
 export function dictGetDict(dict: PDFDict, key: string): PDFDict | undefined {
-  const v = dict.entries.get(key);
+  const v = dict.entries?.get(key);
   return v !== undefined ? getDict(v) : undefined;
 }
 
 export function dictGetRef(dict: PDFDict, key: string): PDFRef | undefined {
-  const v = dict.entries.get(key);
+  const v = dict.entries?.get(key);
   return v !== undefined ? getRef(v) : undefined;
 }
 

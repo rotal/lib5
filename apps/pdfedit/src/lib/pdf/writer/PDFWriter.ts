@@ -229,6 +229,7 @@ export class PDFWriter {
 
   private writeDict(dict: PDFDict): void {
     this.write('<<');
+    if (!dict.entries) return this.write('>>');
     for (const [key, value] of dict.entries) {
       this.write('/');
       this.writeName(key);
@@ -241,7 +242,7 @@ export class PDFWriter {
 
   private writeStream(stream: PDFStream, compress: boolean): void {
     let data = stream.data;
-    const dict = new Map(stream.dict.entries);
+    const dict = new Map(stream.dict?.entries || []);
 
     // Optionally compress
     if (compress && !dict.has('Filter')) {
@@ -320,7 +321,7 @@ export class PDFWriter {
     // Create new trailer dict with updated values
     const newTrailer: PDFDict = {
       type: 'dict',
-      entries: new Map(trailer.entries),
+      entries: new Map(trailer.entries || []),
     };
 
     // Update Size to be max object number + 1
