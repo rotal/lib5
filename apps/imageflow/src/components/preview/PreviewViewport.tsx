@@ -39,8 +39,10 @@ export function PreviewViewport() {
   const [lastSingleChannel, setLastSingleChannel] = useState<'r' | 'g' | 'b' | 'a'>('r');
   const [previewBgMode, setPreviewBgMode] = useState<'check' | 'grid' | 'black'>('check');
   const [hudModes, setHudModes] = useState<Set<'viewport' | 'image' | 'transform' | 'borders'>>(new Set());
+  const [borderModes, setBorderModes] = useState<Set<'slot1' | 'slot2' | 'slot3' | 'canvas'>>(new Set());
   const [hudVisible, setHudVisible] = useState(true);
   const [hudDropdownOpen, setHudDropdownOpen] = useState(false);
+  const [borderSubmenuOpen, setBorderSubmenuOpen] = useState(false);
   const [channelDropdownOpen, setChannelDropdownOpen] = useState(false);
   const [toolbarPinned, setToolbarPinned] = useState(false);
   const [toolbarHovered, setToolbarHovered] = useState(false);
@@ -706,7 +708,7 @@ export function PreviewViewport() {
     if (showComparison) {
       // Draw background
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      if (hudVisible && hudModes.has('borders')) {
+      if (hudVisible && borderModes.has('slot3')) {
         drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
       }
 
@@ -730,7 +732,7 @@ export function PreviewViewport() {
       }
       ctx.clip();
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
-      if (hudVisible && hudModes.has('borders')) {
+      if (hudVisible && borderModes.has(previewForegroundSlot === 0 ? 'slot1' : 'slot2')) {
         drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
       }
       ctx.restore();
@@ -751,18 +753,18 @@ export function PreviewViewport() {
       ctx.stroke();
     } else if (hasBackground) {
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      if (hudVisible && hudModes.has('borders')) {
+      if (hudVisible && borderModes.has('slot3')) {
         drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
       }
     } else if (hasForeground) {
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
-      if (hudVisible && hudModes.has('borders')) {
+      if (hudVisible && borderModes.has(previewForegroundSlot === 0 ? 'slot1' : 'slot2')) {
         drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
       }
     }
 
-    // Draw canvas border to indicate project resolution bounds (only in viewport HUD mode)
-    if (hudVisible && hudModes.has('viewport')) {
+    // Draw canvas border to indicate project resolution bounds
+    if (hudVisible && borderModes.has('canvas')) {
       ctx.strokeStyle = '#ffcc00';
       ctx.lineWidth = 2 / zoom;
       ctx.strokeRect(projectOffsetX, projectOffsetY, canvasSettings.width, canvasSettings.height);
@@ -1184,7 +1186,6 @@ export function PreviewViewport() {
                   { id: 'viewport', icon: '⊞', label: 'Viewport' },
                   { id: 'image', icon: '◫', label: 'Image' },
                   { id: 'transform', icon: '⟲', label: 'Transform' },
-                  { id: 'borders', icon: '▢', label: 'Borders' },
                 ] as const).map(({ id, icon, label }) => (
                   <button
                     key={id}
@@ -1208,6 +1209,64 @@ export function PreviewViewport() {
                     <span className="w-4 text-center text-[10px]">{hudModes.has(id) ? '✓' : ''}</span>
                   </button>
                 ))}
+                {/* Borders with submenu */}
+                <div
+                  className="relative"
+                  onMouseEnter={() => setBorderSubmenuOpen(true)}
+                  onMouseLeave={() => setBorderSubmenuOpen(false)}
+                >
+                  <button
+                    onClick={() => {
+                      // Toggle all borders on/off
+                      if (borderModes.size > 0) {
+                        setBorderModes(new Set());
+                      } else {
+                        setBorderModes(new Set(['slot1', 'slot2', 'slot3', 'canvas']));
+                      }
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-all duration-100 ${
+                      borderModes.size > 0
+                        ? 'text-editor-text'
+                        : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
+                    }`}
+                  >
+                    <span className="w-4 text-center opacity-70">▢</span>
+                    <span className="flex-1 text-left">Borders</span>
+                    <span className="text-[10px]">▸</span>
+                  </button>
+                  {/* Border submenu */}
+                  <div className={`absolute left-full top-0 ml-1 bg-editor-surface/70 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[100px] py-1 transition-opacity duration-300 ${
+                    borderSubmenuOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                  }`}>
+                    {([
+                      { id: 'slot1', label: 'Slot 1' },
+                      { id: 'slot2', label: 'Slot 2' },
+                      { id: 'slot3', label: 'Slot 3' },
+                      { id: 'canvas', label: 'Canvas' },
+                    ] as const).map(({ id, label }) => (
+                      <button
+                        key={id}
+                        onClick={() => {
+                          const newModes = new Set(borderModes);
+                          if (newModes.has(id)) {
+                            newModes.delete(id);
+                          } else {
+                            newModes.add(id);
+                          }
+                          setBorderModes(newModes);
+                        }}
+                        className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-all duration-100 ${
+                          borderModes.has(id)
+                            ? 'text-editor-text'
+                            : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
+                        }`}
+                      >
+                        <span className="w-4 text-center text-[10px]">{borderModes.has(id) ? '✓' : ''}</span>
+                        <span>{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
             </div>
           </div>
           {/* Background toggle - cycles through check/grid/black */}
