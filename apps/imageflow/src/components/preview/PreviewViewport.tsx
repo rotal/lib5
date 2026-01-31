@@ -1102,7 +1102,7 @@ export function PreviewViewport() {
               onClick={() => setHudDropdownOpen(!hudDropdownOpen)}
               className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-all duration-150 ${
                 hudModes.size > 0
-                  ? 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.3)]'
+                  ? 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 text-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.3)]'
                   : 'bg-editor-surface-light/50 text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
               }`}
               title="HUD overlay"
@@ -1112,7 +1112,7 @@ export function PreviewViewport() {
               </svg>
               <span className="font-medium">HUD</span>
               {hudModes.size > 0 && (
-                <span className="ml-0.5 w-4 h-4 rounded-full bg-amber-500/30 text-[9px] flex items-center justify-center font-bold">
+                <span className="ml-0.5 w-4 h-4 rounded-full bg-sky-500/30 text-[9px] flex items-center justify-center font-bold">
                   {hudModes.size}
                 </span>
               )}
@@ -1141,7 +1141,7 @@ export function PreviewViewport() {
                     }}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-all duration-100 ${
                       hudModes.has(id)
-                        ? 'bg-amber-500/15 text-amber-300'
+                        ? 'bg-sky-500/15 text-sky-300'
                         : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
                     }`}
                   >
