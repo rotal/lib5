@@ -40,6 +40,7 @@ export function PreviewViewport() {
   const [previewBgMode, setPreviewBgMode] = useState<'check' | 'grid' | 'black'>('check');
   const [hudModes, setHudModes] = useState<Set<'viewport' | 'image' | 'transform' | 'borders'>>(new Set());
   const [borderModes, setBorderModes] = useState<Set<'slot1' | 'slot2' | 'slot3' | 'canvas'>>(new Set());
+  const [bordersEnabled, setBordersEnabled] = useState(false);
   const [hudVisible, setHudVisible] = useState(true);
   const [hudDropdownOpen, setHudDropdownOpen] = useState(false);
   const [channelDropdownOpen, setChannelDropdownOpen] = useState(false);
@@ -707,7 +708,7 @@ export function PreviewViewport() {
     if (showComparison) {
       // Draw background
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      if (hudVisible && borderModes.has('slot3')) {
+      if (hudVisible && bordersEnabled && borderModes.has('slot3')) {
         drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
       }
 
@@ -731,7 +732,7 @@ export function PreviewViewport() {
       }
       ctx.clip();
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
-      if (hudVisible && borderModes.has(previewForegroundSlot === 0 ? 'slot1' : 'slot2')) {
+      if (hudVisible && bordersEnabled && borderModes.has(previewForegroundSlot === 0 ? 'slot1' : 'slot2')) {
         drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
       }
       ctx.restore();
@@ -752,18 +753,18 @@ export function PreviewViewport() {
       ctx.stroke();
     } else if (hasBackground) {
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      if (hudVisible && borderModes.has('slot3')) {
+      if (hudVisible && bordersEnabled && borderModes.has('slot3')) {
         drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
       }
     } else if (hasForeground) {
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
-      if (hudVisible && borderModes.has(previewForegroundSlot === 0 ? 'slot1' : 'slot2')) {
+      if (hudVisible && bordersEnabled && borderModes.has(previewForegroundSlot === 0 ? 'slot1' : 'slot2')) {
         drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
       }
     }
 
     // Draw canvas border to indicate project resolution bounds
-    if (hudVisible && borderModes.has('canvas')) {
+    if (hudVisible && bordersEnabled && borderModes.has('canvas')) {
       ctx.strokeStyle = '#ffcc00';
       ctx.lineWidth = 2 / zoom;
       ctx.strokeRect(projectOffsetX, projectOffsetY, canvasSettings.width, canvasSettings.height);
@@ -1210,24 +1211,20 @@ export function PreviewViewport() {
                 ))}
                 {/* Separator */}
                 <div className="my-1 border-t border-white/10" />
-                {/* Borders header - click to toggle all */}
+                {/* Borders header - enable/disable toggle */}
                 <button
                   onClick={() => {
-                    if (borderModes.size > 0) {
-                      setBorderModes(new Set());
-                    } else {
-                      setBorderModes(new Set(['slot1', 'slot2', 'slot3', 'canvas']));
-                    }
+                    setBordersEnabled(!bordersEnabled);
                   }}
                   className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-all duration-100 ${
-                    borderModes.size > 0
+                    bordersEnabled
                       ? 'text-editor-text'
                       : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
                   }`}
                 >
                   <span className="w-4 text-center opacity-70">▢</span>
                   <span className="flex-1 text-left">Borders</span>
-                  <span className="w-4 text-center text-[10px]">{borderModes.size > 0 ? '✓' : ''}</span>
+                  <span className="w-4 text-center text-[10px]">{bordersEnabled ? '✓' : ''}</span>
                 </button>
                 {/* Individual border options */}
                 {([
