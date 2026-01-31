@@ -1,6 +1,6 @@
 import { Graph, GraphExecutionState } from '../../types/graph';
 import { NodeRuntimeState, ExecutionContext } from '../../types/node';
-import { PortValue, DataType, isGPUTexture, isFloatImage, coercePortValue, isIdentityLocalTransform, createPivotTransform, multiplyTransform, IDENTITY_TRANSFORM, FloatImage, imageDataToFloat, isIdentityTransform, applyTransformToImage } from '../../types/data';
+import { PortValue, DataType, isGPUTexture, isFloatImage, coercePortValue, createPivotTransform, multiplyTransform, IDENTITY_TRANSFORM, FloatImage, imageDataToFloat, isIdentityTransform, applyTransformToImage } from '../../types/data';
 import { GPUContext } from '../../types/gpu';
 import { NodeRegistry } from './NodeRegistry';
 import { topologicalSort, getPartialExecutionOrder } from './TopologicalSort';
@@ -200,6 +200,198 @@ export class GraphEngine {
   }
 
   /**
+   * Execute only a single node using cached inputs (for interactive editing).
+   * Does NOT re-execute upstream nodes - uses whatever is in cache.
+   * OPTIMIZATION: If only transform params changed and we have cached output,
+   * just update the transform without re-executing (no memory allocation).
+   */
+  async executeSingleNode(nodeId: string): Promise<void> {
+    const node = this.graph.nodes[nodeId];
+    if (!node) return;
+
+    const definition = NodeRegistry.get(node.type);
+    if (!definition) return;
+
+    // OPTIMIZATION: If node has local transform and we have cached output,
+    // try to just update the transform instead of re-executing
+    const cachedOutput = this.outputCache.get(nodeId);
+    if (definition.hasLocalTransform && cachedOutput) {
+      const updated = this.tryUpdateTransformOnly(nodeId, cachedOutput, node.parameters, definition);
+      if (updated) {
+        // Successfully updated transform without re-execution
+        this.callbacks.onNodeComplete?.(nodeId, cachedOutput);
+        return;
+      }
+    }
+
+    // Abort any previous execution to prevent race conditions during rapid updates
+    if (this.abortController) {
+      this.abortController.abort();
+    }
+
+    // Clear cache for this node only (force re-execute)
+    this.outputCache.delete(nodeId);
+
+    const abortController = new AbortController();
+    this.abortController = abortController;
+
+    try {
+      await this.executeNode(nodeId, abortController.signal);
+    } catch (error) {
+      // Ignore abort errors - they're expected when a new execution supersedes this one
+      if (error instanceof Error && error.message === 'Execution aborted') {
+        return;
+      }
+      console.error('Single node execution failed:', error);
+    } finally {
+      // Only clear if this is still the active controller
+      if (this.abortController === abortController) {
+        this.abortController = null;
+      }
+    }
+  }
+
+  /**
+   * Try to update just the transform on cached outputs without re-executing.
+   * Returns true if successful, false if full re-execution is needed.
+   */
+  private tryUpdateTransformOnly(
+    nodeId: string,
+    cachedOutput: Record<string, PortValue>,
+    params: Record<string, unknown>,
+    definition: { outputs: Array<{ id: string; dataType: string }> }
+  ): boolean {
+    const tx = (params._tx as number) ?? 0;
+    const ty = (params._ty as number) ?? 0;
+    const sx = (params._sx as number) ?? 1;
+    const sy = (params._sy as number) ?? 1;
+    const angleDeg = (params._angle as number) ?? 0;
+    const px = (params._px as number) ?? 0.5;
+    const py = (params._py as number) ?? 0.5;
+
+    let anyUpdated = false;
+
+    for (const [key, value] of Object.entries(cachedOutput)) {
+      const outputDef = definition.outputs.find(o => o.id === key);
+      const isImageOutput = outputDef && (outputDef.dataType === 'image' || outputDef.dataType === 'mask');
+
+      if (isImageOutput && isFloatImage(value)) {
+        const img = value as FloatImage;
+
+        // Calculate pivot in pixel coordinates
+        const pivotX = img.width * px;
+        const pivotY = img.height * py;
+
+        // Create new transform
+        const angleRad = angleDeg * (Math.PI / 180);
+        const nodeTransform = createPivotTransform(sx, sy, angleRad, pivotX, pivotY, tx, ty);
+
+        // Get the base transform (original image transform before our local transform)
+        const storedBaseTransform = img.baseTransform ?? IDENTITY_TRANSFORM;
+        const combinedTransform = multiplyTransform(nodeTransform, storedBaseTransform);
+
+        // Update transform in place (no new allocation!)
+        img.transform = combinedTransform;
+        anyUpdated = true;
+      }
+    }
+
+    return anyUpdated;
+  }
+
+  /**
+   * Propagate transform changes to downstream nodes without re-executing them.
+   * This updates the cached outputs' transforms in-place for nodes that don't
+   * require spatial coherence (they just pass transforms through).
+   * Nodes that DO require spatial coherence need re-execution but we still
+   * propagate through them so further downstream nodes can update.
+   */
+  propagateTransformToDownstream(startNodeId: string, downstreamNodeIds: string[]): void {
+    // Track which nodes need re-execution (spatial coherence)
+    const needsReexecution = new Set<string>();
+
+    // Process nodes in order (should be topological from BFS)
+    for (const nodeId of downstreamNodeIds) {
+      const node = this.graph.nodes[nodeId];
+      if (!node) continue;
+
+      const definition = NodeRegistry.get(node.type);
+      if (!definition) continue;
+
+      const cachedOutput = this.outputCache.get(nodeId);
+      if (!cachedOutput) continue;
+
+      // Get the input transform from upstream
+      let inputTransform = IDENTITY_TRANSFORM;
+      const inputEdges = Object.values(this.graph.edges).filter(e => e.targetNodeId === nodeId);
+      for (const edge of inputEdges) {
+        const sourceOutput = this.outputCache.get(edge.sourceNodeId);
+        if (sourceOutput) {
+          const sourceValue = sourceOutput[edge.sourcePortId];
+          if (isFloatImage(sourceValue) && sourceValue.transform) {
+            inputTransform = sourceValue.transform;
+            break; // Use first image input's transform
+          }
+        }
+      }
+
+      // Check if any upstream node needs re-execution (spatial coherence chain broken)
+      let upstreamNeedsReexec = false;
+      for (const edge of inputEdges) {
+        if (needsReexecution.has(edge.sourceNodeId)) {
+          upstreamNeedsReexec = true;
+          break;
+        }
+      }
+
+      // Nodes that require spatial coherence need to re-execute to bake the transform
+      if (definition.requiresSpatialCoherence || upstreamNeedsReexec) {
+        needsReexecution.add(nodeId);
+        // Mark for re-execution but DON'T delete cache yet - downstream may still read transforms
+        // The cache will be cleared on next execution
+      }
+
+      // Update this node's output transforms (even for spatial coherence - downstream needs it)
+      for (const [key, value] of Object.entries(cachedOutput)) {
+        const outputDef = definition.outputs.find(o => o.id === key);
+        const isImageOutput = outputDef && (outputDef.dataType === 'image' || outputDef.dataType === 'mask');
+
+        if (isImageOutput && isFloatImage(value)) {
+          const img = value as FloatImage;
+          // Compose input transform with node's local transform
+          if (definition.hasLocalTransform) {
+            const params = node.parameters;
+            const tx = (params._tx as number) ?? 0;
+            const ty = (params._ty as number) ?? 0;
+            const sx = (params._sx as number) ?? 1;
+            const sy = (params._sy as number) ?? 1;
+            const angleDeg = (params._angle as number) ?? 0;
+            const px = (params._px as number) ?? 0.5;
+            const py = (params._py as number) ?? 0.5;
+
+            const pivotX = img.width * px;
+            const pivotY = img.height * py;
+            const angleRad = angleDeg * (Math.PI / 180);
+            const nodeTransform = createPivotTransform(sx, sy, angleRad, pivotX, pivotY, tx, ty);
+
+            img.transform = multiplyTransform(nodeTransform, inputTransform);
+          } else {
+            // No local transform, just pass through input transform
+            img.transform = inputTransform;
+          }
+        }
+      }
+
+      // Create a new object reference to trigger React re-render
+      const updatedOutput = { ...cachedOutput };
+      this.outputCache.set(nodeId, updatedOutput);
+
+      // Notify that this node's output changed
+      this.callbacks.onNodeComplete?.(nodeId, updatedOutput);
+    }
+  }
+
+  /**
    * Execute a list of nodes in order
    */
   private async executeNodes(nodeIds: string[]): Promise<void> {
@@ -239,9 +431,12 @@ export class GraphEngine {
   }
 
   /**
-   * Execute a single node
+   * Execute a single node (public for lazy evaluation)
+   * Creates its own abort controller if no signal is provided
    */
-  private async executeNode(nodeId: string, signal: AbortSignal): Promise<void> {
+  async executeNode(nodeId: string, signal?: AbortSignal): Promise<void> {
+    // Create abort controller if not provided
+    const useSignal = signal ?? new AbortController().signal;
     const node = this.graph.nodes[nodeId];
     if (!node) {
       throw new Error(`Node not found: ${nodeId}`);
@@ -316,7 +511,7 @@ export class GraphEngine {
       const context: ExecutionContext = {
         nodeId,
         graphId: this.graph.id,
-        signal,
+        signal: useSignal,
         reportProgress: (progress: number) => {
           this.state.nodeStates[nodeId].progress = progress;
           this.callbacks.onNodeProgress?.(nodeId, progress);
@@ -336,6 +531,12 @@ export class GraphEngine {
       let outputs = await definition.execute(inputs, node.parameters, context);
       const executionTime = performance.now() - startTime;
 
+      // Check if execution was aborted while we were running
+      // If so, discard results to prevent stale data from being stored
+      if (useSignal.aborted) {
+        throw new Error('Execution aborted');
+      }
+
       // If preview is enabled, convert GPU textures to FloatImage for display
       // This must happen BEFORE applyLocalTransform so transform can be applied to FloatImage
       if (node.parameters.preview && this.gpuContext) {
@@ -353,10 +554,13 @@ export class GraphEngine {
         outputs = previewOutputs;
       }
 
-      // Apply local transform if node has hasLocalTransform and transform is not identity
-      // This applies transform to FloatImage/ImageData outputs (after GPU download if preview enabled)
-      if (definition.hasLocalTransform && !isIdentityLocalTransform(node.parameters)) {
-        outputs = this.applyLocalTransform(outputs, node.parameters, definition);
+      // Apply local transform if node has hasLocalTransform
+      // ALWAYS call this to normalize ImageData → FloatImage, even if transform is identity
+      // This is critical so tryUpdateTransformOnly can work on subsequent calls
+      // IMPORTANT: Re-read parameters from current graph state to get latest values during rapid updates
+      const currentParams = this.graph.nodes[nodeId]?.parameters ?? node.parameters;
+      if (definition.hasLocalTransform) {
+        outputs = this.applyLocalTransform(outputs, currentParams, definition);
       }
 
       // Cache outputs
@@ -438,11 +642,13 @@ export class GraphEngine {
         const combinedTransform = multiplyTransform(nodeTransform, existingTransform);
 
         // Return image with updated transform - NO pixel resampling
+        // Store base transform for later incremental updates during gizmo drag
         transformedOutputs[key] = {
           data: img.data,
           width: img.width,
           height: img.height,
           transform: combinedTransform,
+          baseTransform: img.baseTransform ?? existingTransform, // Preserve original for incremental updates
           origin: img.origin,
         };
       } else {
@@ -474,6 +680,13 @@ export class GraphEngine {
    */
   getGPUContext(): GPUContext | null {
     return this.gpuContext;
+  }
+
+  /**
+   * Get the current graph
+   */
+  getGraph(): Graph {
+    return this.graph;
   }
 
   /**

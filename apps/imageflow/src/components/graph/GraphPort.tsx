@@ -9,6 +9,7 @@ interface GraphPortProps {
   direction: 'input' | 'output';
   nodeId: string;
   isConnected: boolean;
+  isDirty?: boolean; // Show yellow ring for dirty output ports
   onConnectionStart: (
     nodeId: string,
     portId: string,
@@ -24,6 +25,7 @@ export function GraphPort({
   direction,
   nodeId,
   isConnected,
+  isDirty,
   onConnectionStart,
   onConnectionEnd,
 }: GraphPortProps) {
@@ -104,6 +106,9 @@ export function GraphPort({
   const showIncompatible = isDragging && !isCompatible;
   const showCompatible = isDragging && isCompatible && connectionDrag?.sourceDirection !== direction;
 
+  // Show dirty indicator only on output ports
+  const showDirtyRing = isDirty && direction === 'output';
+
   // On mobile, wrap with larger touch target (44px minimum for accessibility)
   const touchTargetSize = isMobile ? 44 : 0;
 
@@ -127,6 +132,21 @@ export function GraphPort({
           onTouchEnd={handleTouchEnd}
         />
       )}
+      {/* Dirty indicator ring - yellow circle around output port */}
+      {showDirtyRing && (
+        <div
+          className="absolute rounded-full pointer-events-none"
+          style={{
+            width: 20,
+            height: 20,
+            left: -4,
+            top: -4,
+            border: '2px solid #facc15', // yellow-400
+            boxShadow: '0 0 4px #facc15',
+          }}
+          title="Needs recomputation"
+        />
+      )}
       <div
         ref={portRef}
         className={`node-port ${isConnected ? 'connected' : ''} ${showCompatible ? 'compatible-target' : ''}`}
@@ -146,7 +166,7 @@ export function GraphPort({
         data-port-id={port.id}
         data-port-direction={direction}
         data-node-id={nodeId}
-        title={`${port.name} (${port.dataType})${showIncompatible ? ' (incompatible)' : ''}`}
+        title={`${port.name} (${port.dataType})${showIncompatible ? ' (incompatible)' : ''}${showDirtyRing ? ' (needs recomputation)' : ''}`}
       />
     </div>
   );

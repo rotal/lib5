@@ -1,4 +1,5 @@
 import type { GPUTexture } from './gpu';
+import { trackFloat32Array, trackImageData } from '../utils/memoryProfiler';
 
 /**
  * Data types that can flow through node ports
@@ -198,6 +199,8 @@ export interface FloatImage {
   origin?: { x: number; y: number };
   /** Transform matrix mapping image-local to world coordinates */
   transform?: Transform2D;
+  /** Base transform before local node transform - used for incremental updates during gizmo drag */
+  baseTransform?: Transform2D;
 }
 
 /**
@@ -221,8 +224,10 @@ export function createFloatImage(
   height: number,
   origin?: { x: number; y: number }
 ): FloatImage {
+  const data = new Float32Array(width * height * 4);
+  trackFloat32Array(data, 'createFloatImage');
   return {
-    data: new Float32Array(width * height * 4),
+    data,
     width,
     height,
     origin,
@@ -235,6 +240,7 @@ export function createFloatImage(
 export function imageDataToFloat(imageData: ImageData): FloatImage {
   const { width, height, data } = imageData;
   const floatData = new Float32Array(width * height * 4);
+  trackFloat32Array(floatData, 'imageDataToFloat');
   const scale = 1 / 255;
 
   for (let i = 0; i < data.length; i++) {
@@ -245,17 +251,37 @@ export function imageDataToFloat(imageData: ImageData): FloatImage {
 }
 
 /**
+ * Cache for floatToImageData to avoid repeated allocations.
+ * Uses WeakMap so entries are automatically garbage collected when Float32Array is no longer referenced.
+ */
+const floatToImageDataCache = new WeakMap<Float32Array, ImageData>();
+
+/**
  * Convert FloatImage (0.0-1.0) to ImageData (0-255)
+ * CACHED: Returns cached ImageData if the Float32Array reference hasn't changed.
+ * This is critical for performance during gizmo drag where only transform changes.
  */
 export function floatToImageData(floatImage: FloatImage): ImageData {
   const { width, height, data } = floatImage;
+
+  // Check cache first - if Float32Array reference is same, reuse ImageData
+  const cached = floatToImageDataCache.get(data);
+  if (cached && cached.width === width && cached.height === height) {
+    return cached;
+  }
+
+  // Create new ImageData
   const imageData = new ImageData(width, height);
+  trackImageData(imageData, 'floatToImageData');
   const outData = imageData.data;
 
   for (let i = 0; i < data.length; i++) {
     // Clamp to 0-1 range and convert to 0-255
     outData[i] = Math.round(Math.max(0, Math.min(1, data[i])) * 255);
   }
+
+  // Cache for future calls
+  floatToImageDataCache.set(data, imageData);
 
   return imageData;
 }
@@ -264,8 +290,10 @@ export function floatToImageData(floatImage: FloatImage): ImageData {
  * Clone a FloatImage
  */
 export function cloneFloatImage(source: FloatImage): FloatImage {
+  const cloneData = new Float32Array(source.data);
+  trackFloat32Array(cloneData, 'cloneFloatImage');
   return {
-    data: new Float32Array(source.data),
+    data: cloneData,
     width: source.width,
     height: source.height,
     origin: source.origin ? { ...source.origin } : undefined,
@@ -281,8 +309,10 @@ export function applyTransformToImage(image: FloatImage): FloatImage {
   const transform = image.transform;
   if (!transform || isIdentityTransform(transform)) {
     // No transform or identity - just clone without transform property
+    const cloneData = new Float32Array(image.data);
+    trackFloat32Array(cloneData, 'applyTransform:identity');
     return {
-      data: new Float32Array(image.data),
+      data: cloneData,
       width: image.width,
       height: image.height,
     };
@@ -318,14 +348,17 @@ export function applyTransformToImage(image: FloatImage): FloatImage {
 
   // Sanity check
   if (dstW <= 0 || dstH <= 0 || dstW > 16384 || dstH > 16384) {
+    const cloneData = new Float32Array(image.data);
+    trackFloat32Array(cloneData, 'applyTransform:invalid');
     return {
-      data: new Float32Array(image.data),
+      data: cloneData,
       width: image.width,
       height: image.height,
     };
   }
 
   const dst = new Float32Array(dstW * dstH * 4);
+  trackFloat32Array(dst, 'applyTransform:resample');
 
   // Inverse transform maps world coords to source coords
   const inv = invertTransform(transform);
@@ -600,7 +633,7 @@ export function coercePortValue(
  */
 export function getDataTypeColor(type: DataType): string {
   const colors: Record<DataType, string> = {
-    image: '#f59e0b',
+    image: '#06b6d4', // cyan (yellow now used for dirty indicator)
     mask: '#8b5cf6',
     number: '#3b82f6',
     color: '#ec4899',

@@ -9,6 +9,38 @@ import type { GPUTexture } from '../../types/gpu';
 
 const PREVIEW_SLOT_COLORS = ['#ef4444', '#22c55e', '#3b82f6']; // Red, Green, Blue for slots 1, 2, 3
 
+// Cache for ImageData -> data URL conversion to avoid repeated allocations
+const dataUrlCache = new WeakMap<ImageData, string>();
+// Reusable canvas for data URL generation
+let sharedTempCanvas: HTMLCanvasElement | null = null;
+
+function imageDataToDataUrl(imageData: ImageData): string {
+  // Check cache first
+  const cached = dataUrlCache.get(imageData);
+  if (cached) return cached;
+
+  // Get or create shared canvas
+  if (!sharedTempCanvas) {
+    sharedTempCanvas = document.createElement('canvas');
+  }
+
+  // Resize only if needed
+  if (sharedTempCanvas.width !== imageData.width || sharedTempCanvas.height !== imageData.height) {
+    sharedTempCanvas.width = imageData.width;
+    sharedTempCanvas.height = imageData.height;
+  }
+
+  const ctx = sharedTempCanvas.getContext('2d');
+  if (!ctx) return '';
+
+  ctx.putImageData(imageData, 0, 0);
+  const dataUrl = sharedTempCanvas.toDataURL('image/png');
+
+  // Cache for future calls
+  dataUrlCache.set(imageData, dataUrl);
+  return dataUrl;
+}
+
 interface GraphNodeProps {
   node: NodeInstance;
   isSelected: boolean;
@@ -66,9 +98,12 @@ export function GraphNode({
   const { previewSlots, previewBackgroundActive, previewForegroundSlot, showContextMenu } = useUiStore();
   const selectedNodeIds = useGraphStore((s) => s.selectedNodeIds);
   const graph = useGraphStore((s) => s.graph);
-  const { downloadGPUTexture } = useExecutionStore();
+  const { downloadGPUTexture, dirtyPreviewNodes, dirtyNodes } = useExecutionStore();
   const setNodeLocalPreview = useGraphStore((s) => s.setNodeLocalPreview);
   const localPreview = !!node.localPreview;
+  const isDirtyPreview = dirtyPreviewNodes.has(node.id);
+  // Node needs re-computation (lazy evaluation dirty state)
+  const isDirty = dirtyNodes.has(node.id);
   const [previewDataUrl, setPreviewDataUrl] = useState<string | null>(null);
 
   const categoryColor = CATEGORY_COLORS[definition?.category || 'Utility'];
@@ -154,7 +189,7 @@ export function GraphNode({
     return entries.length > 0 ? entries : null;
   }, [localPreview, nodeOutputs, previewImageData, definition]);
 
-  // Generate preview data URL
+  // Generate preview data URL (uses cached conversion to avoid memory leak)
   useEffect(() => {
     if (!localPreview) {
       setPreviewDataUrl(null);
@@ -166,15 +201,8 @@ export function GraphNode({
       return;
     }
 
-    // Create off-screen canvas and generate data URL
-    const canvas = document.createElement('canvas');
-    canvas.width = previewImageData.width;
-    canvas.height = previewImageData.height;
-    const ctx = canvas.getContext('2d');
-    if (ctx) {
-      ctx.putImageData(previewImageData, 0, 0);
-      setPreviewDataUrl(canvas.toDataURL('image/png'));
-    }
+    // Use cached data URL generation
+    setPreviewDataUrl(imageDataToDataUrl(previewImageData));
   }, [localPreview, previewImageData]);
 
   const handleTogglePreview = useCallback((e: React.MouseEvent) => {
@@ -475,6 +503,7 @@ export function GraphNode({
               direction="output"
               nodeId={node.id}
               isConnected={connectedOutputs.has(port.id)}
+              isDirty={isDirty}
               onConnectionStart={onConnectionStart}
               onConnectionEnd={onConnectionEnd}
             />
@@ -565,7 +594,7 @@ export function GraphNode({
             <img
               src={previewDataUrl}
               alt="Preview"
-              className="rounded border border-editor-border"
+              className={`rounded border-2 ${isDirtyPreview ? 'border-yellow-500' : 'border-editor-border'}`}
               style={{
                 maxWidth: 180,
                 maxHeight: 180,
@@ -576,7 +605,7 @@ export function GraphNode({
             />
           ) : previewScalarData ? (
             <div
-              className="rounded border border-editor-border p-3 flex flex-col items-center justify-center gap-1"
+              className={`rounded border-2 p-3 flex flex-col items-center justify-center gap-1 ${isDirtyPreview ? 'border-yellow-500' : 'border-editor-border'}`}
               style={{ minWidth: 120, backgroundColor: '#1a1a2e' }}
             >
               {previewScalarData.map((item, i) => (
@@ -588,7 +617,7 @@ export function GraphNode({
             </div>
           ) : (
             <div
-              className="rounded border border-editor-border flex items-center justify-center text-editor-text-dim text-xs"
+              className={`rounded border-2 flex items-center justify-center text-editor-text-dim text-xs ${isDirtyPreview ? 'border-yellow-500' : 'border-editor-border'}`}
               style={{ width: 180, height: 120, backgroundColor: '#1a1a2e' }}
             >
               No preview

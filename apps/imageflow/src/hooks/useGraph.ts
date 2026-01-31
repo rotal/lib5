@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { useGraphStore, useExecutionStore, useHistoryStore, useUiStore } from '../store';
+import { useGraphStore, useExecutionStore, useHistoryStore } from '../store';
 import { getDownstreamNodes } from '../core/graph/TopologicalSort';
 
 /**
@@ -8,7 +8,6 @@ import { getDownstreamNodes } from '../core/graph/TopologicalSort';
 export function useGraph() {
   const graphStore = useGraphStore();
   const historyStore = useHistoryStore();
-  const uiStore = useUiStore();
 
   // Only subscribe to the specific execution state we need for the return value
   // Use selectors to avoid re-renders on every callback
@@ -88,20 +87,14 @@ export function useGraph() {
       const freshGraph = useGraphStore.getState().graph;
       historyStore.saveState(freshGraph, 'Connect nodes');
 
-      // Mark downstream nodes as dirty and execute
+      // LAZY EVALUATION: Mark downstream nodes as dirty (no execution)
+      // Execution happens on-demand when preview requests output
       const exec = useExecutionStore.getState();
-      const dirtyNodes = [targetNodeId, ...getDownstreamNodes(freshGraph, targetNodeId)];
-      exec.markNodesDirty(Array.from(dirtyNodes));
-
-      // Auto-execute if live edit is enabled
-      if (uiStore.liveEdit && !exec.isExecuting) {
-        // Ensure engine has the latest graph before executing
-        exec.updateEngineGraph(freshGraph);
-        exec.execute();
-      }
+      exec.updateEngineGraph(freshGraph);
+      exec.markDirtyWithDownstream(targetNodeId);
     }
     return edgeId;
-  }, [graphStore, historyStore, uiStore.liveEdit]);
+  }, [graphStore, historyStore]);
 
   // Remove edges with history
   const removeEdges = useCallback((edgeIds: string[]) => {
@@ -120,77 +113,114 @@ export function useGraph() {
     const freshGraph = useGraphStore.getState().graph;
     historyStore.saveState(freshGraph, `Remove ${edgeIds.length} connection(s)`);
 
-    // Mark downstream nodes as dirty
-    if (targetNodes.length > 0) {
-      const dirtyNodes = new Set<string>();
-      for (const nodeId of targetNodes) {
-        dirtyNodes.add(nodeId);
-        for (const downstream of getDownstreamNodes(freshGraph, nodeId)) {
-          dirtyNodes.add(downstream);
-        }
-      }
-      useExecutionStore.getState().markNodesDirty(Array.from(dirtyNodes));
+    // LAZY EVALUATION: Mark downstream nodes as dirty (no execution)
+    const exec = useExecutionStore.getState();
+    exec.updateEngineGraph(freshGraph);
+    for (const nodeId of targetNodes) {
+      exec.markDirtyWithDownstream(nodeId);
     }
   }, [graphStore, historyStore]);
 
   // Update node parameter (called during drag)
+  // LAZY EVALUATION: Only marks nodes dirty, no execution
+  // Execution happens on-demand when preview requests output
   const updateNodeParameter = useCallback((
     nodeId: string,
     paramId: string,
     value: unknown
   ) => {
+    // Always update parameters immediately for responsive UI
     graphStore.updateNodeParameter(nodeId, paramId, value);
 
     // Get fresh graph state after update (not stale closure reference)
     const freshGraph = useGraphStore.getState().graph;
     const exec = useExecutionStore.getState();
 
-    // Mark node and downstream as dirty
-    const dirtyNodes = [nodeId, ...getDownstreamNodes(freshGraph, nodeId)];
-    exec.markNodesDirty(Array.from(dirtyNodes));
+    // Update engine with latest graph state
+    exec.updateEngineGraph(freshGraph);
 
-    // In live mode, execute immediately on parameter change
-    if (uiStore.liveEdit && !exec.isExecuting) {
-      exec.updateEngineGraph(freshGraph);
-      exec.execute();
+    // Check if this is a transform-only param (starts with _)
+    // Transform params: _tx, _ty, _sx, _sy, _angle, _px, _py
+    const isTransformParam = paramId.startsWith('_');
+
+    if (isTransformParam) {
+      // For transform params, try to update transform in-place
+      // Only mark downstream nodes dirty for later lazy evaluation
+      const downstreamNodes = getDownstreamNodes(freshGraph, nodeId);
+      const downstreamArray = Array.from(downstreamNodes);
+
+      // Try to update this node's transform in-place (no re-execution)
+      exec.executeSingleNode(nodeId, downstreamArray);
+
+      if (downstreamArray.length > 0) {
+        exec.markNodesDirty(downstreamArray);
+      }
+    } else {
+      // For non-transform params, mark node and all downstream as dirty
+      // NO EXECUTION - lazy evaluation will compute on demand
+      exec.markDirtyWithDownstream(nodeId);
     }
-  }, [graphStore, uiStore.liveEdit]);
+  }, [graphStore]);
 
-  // Batch update multiple parameters atomically (triggers execution once after all updates)
+  // Batch update multiple parameters atomically
+  // LAZY EVALUATION: Only marks nodes dirty, no execution
   const batchUpdateNodeParameters = useCallback((
     nodeId: string,
     updates: Record<string, unknown>
   ) => {
-    // Update all parameters directly in the store (no execution trigger per update)
+    // Update all parameters directly in the store
     for (const [paramId, value] of Object.entries(updates)) {
       graphStore.updateNodeParameter(nodeId, paramId, value);
     }
 
-    // Trigger execution once with all updates applied
     const freshGraph = useGraphStore.getState().graph;
     const exec = useExecutionStore.getState();
-    const dirtyNodes = [nodeId, ...getDownstreamNodes(freshGraph, nodeId)];
-    exec.markNodesDirty(dirtyNodes);
 
-    if (uiStore.liveEdit && !exec.isExecuting) {
-      exec.updateEngineGraph(freshGraph);
-      exec.execute();
+    // Update engine with latest graph state
+    exec.updateEngineGraph(freshGraph);
+
+    // Check if ALL updates are transform-only params
+    const allTransformParams = Object.keys(updates).every(paramId => paramId.startsWith('_'));
+
+    if (allTransformParams) {
+      // For transform params, try to update transform in-place
+      const downstreamNodes = getDownstreamNodes(freshGraph, nodeId);
+      const downstreamArray = Array.from(downstreamNodes);
+
+      exec.executeSingleNode(nodeId, downstreamArray);
+
+      if (downstreamArray.length > 0) {
+        exec.markNodesDirty(downstreamArray);
+      }
+    } else {
+      // For non-transform params, mark node and all downstream as dirty
+      // NO EXECUTION - lazy evaluation will compute on demand
+      exec.markDirtyWithDownstream(nodeId);
     }
-  }, [graphStore, uiStore.liveEdit]);
+  }, [graphStore]);
 
   // Save parameter change to history (debounced, called on mouse up)
-  // Also triggers auto-execute
-  const commitParameterChange = useCallback((_nodeId: string, paramId: string) => {
+  // LAZY EVALUATION: For transform changes, propagate transforms
+  // For non-transform changes, nodes stay dirty until preview requests them
+  const commitParameterChange = useCallback((nodeId: string, paramId: string) => {
     // Get fresh graph state
     const freshGraph = useGraphStore.getState().graph;
     historyStore.saveState(freshGraph, `Change ${paramId}`);
 
-    // Always execute after committing a parameter change
     const exec = useExecutionStore.getState();
-    if (!exec.isExecuting) {
-      // Ensure engine has the latest graph before executing
+    const isTransformParam = paramId.startsWith('_');
+
+    if (isTransformParam) {
+      // Transform-only: propagate transform to downstream nodes without re-executing
+      // This updates their cached outputs' transforms in-place (no new allocations)
+      const downstreamNodes = getDownstreamNodes(freshGraph, nodeId);
       exec.updateEngineGraph(freshGraph);
-      exec.execute();
+      exec.propagateTransform(nodeId, Array.from(downstreamNodes));
+      exec.clearDirtyPreviews();
+    } else {
+      // Non-transform params: nodes stay dirty
+      // Clear visual dirty preview indicators (the dirtyNodes set remains)
+      exec.clearDirtyPreviews();
     }
   }, [historyStore]);
 

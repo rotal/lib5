@@ -28,8 +28,10 @@ const PREVIEW_SLOT_COLORS = ['#ef4444', '#22c55e', '#3b82f6']; // Red, Green, Bl
 export function PreviewViewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Reusable temp canvas for drawing images (avoids memory leak from creating new canvases)
+  const tempCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
-  const { nodeOutputs, isExecuting, downloadGPUTexture } = useExecutionStore();
+  const { nodeOutputs, isExecuting, downloadGPUTexture, dirtyNodes } = useExecutionStore();
   const {
     previewSlots,
     previewBackgroundActive,
@@ -64,15 +66,20 @@ export function PreviewViewport() {
   zoomRef.current = zoom;
   splitVerticalRef.current = previewSplitVertical;
 
-  // Trigger execution if a preview node has no outputs yet
-  const ensureOutputs = useCallback((...nodeIds: (string | null)[]) => {
+  // LAZY EVALUATION: Request output for preview nodes
+  // This triggers computation only for the requested node and its dependencies
+  const ensureOutputs = useCallback(async (...nodeIds: (string | null)[]) => {
     const store = useExecutionStore.getState();
     if (store.isExecuting) return;
-    const missing = nodeIds.some(id => id && !store.nodeOutputs[id]);
-    if (missing) {
-      const freshGraph = useGraphStore.getState().graph;
-      store.updateEngineGraph(freshGraph);
-      store.execute();
+
+    for (const nodeId of nodeIds) {
+      if (nodeId && (store.dirtyNodes.has(nodeId) || !store.nodeOutputs[nodeId])) {
+        // Update engine with fresh graph
+        const freshGraph = useGraphStore.getState().graph;
+        store.updateEngineGraph(freshGraph);
+        // Request output - triggers lazy computation
+        await store.requestOutput(nodeId);
+      }
     }
   }, []);
 
@@ -161,6 +168,22 @@ export function PreviewViewport() {
     }, 500);
     return () => clearTimeout(timer);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // LAZY EVALUATION: Automatically request outputs when preview nodes are dirty
+  // This effect triggers computation when nodes displayed in preview slots become dirty
+  useEffect(() => {
+    // Check if any active preview node is dirty and needs computation
+    const activeNodes = [foregroundNodeId, backgroundNodeId].filter(Boolean) as string[];
+    const dirtyActiveNodes = activeNodes.filter(id => dirtyNodes.has(id));
+
+    if (dirtyActiveNodes.length > 0 && !isExecuting) {
+      // Use a small debounce to batch rapid changes
+      const timer = setTimeout(() => {
+        ensureOutputs(...dirtyActiveNodes);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [dirtyNodes, foregroundNodeId, backgroundNodeId, isExecuting, ensureOutputs]);
 
   // Result type for image with transform
   interface ImageWithTransform {
@@ -420,11 +443,20 @@ export function PreviewViewport() {
     const projectOffsetX = -canvasSettings.width / 2;
     const projectOffsetY = -canvasSettings.height / 2;
 
-    // Helper to draw image with its transform
+    // Helper to draw image with its transform (reuses temp canvas to avoid memory leak)
     const drawImage = (imageData: ImageData, transform: Transform2D) => {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = imageData.width;
-      tempCanvas.height = imageData.height;
+      // Get or create reusable temp canvas
+      if (!tempCanvasRef.current) {
+        tempCanvasRef.current = document.createElement('canvas');
+      }
+      const tempCanvas = tempCanvasRef.current;
+
+      // Resize only if needed
+      if (tempCanvas.width !== imageData.width || tempCanvas.height !== imageData.height) {
+        tempCanvas.width = imageData.width;
+        tempCanvas.height = imageData.height;
+      }
+
       const tempCtx = tempCanvas.getContext('2d');
       if (!tempCtx) return;
       tempCtx.putImageData(imageData, 0, 0);
