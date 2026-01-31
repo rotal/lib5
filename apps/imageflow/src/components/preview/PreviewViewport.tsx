@@ -46,6 +46,8 @@ export function PreviewViewport() {
   const [toolbarHovered, setToolbarHovered] = useState(false);
   const hudDropdownRef = useRef<HTMLDivElement>(null);
   const channelDropdownRef = useRef<HTMLDivElement>(null);
+  const hudCloseTimeout = useRef<NodeJS.Timeout | null>(null);
+  const channelCloseTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Close dropdowns on click outside
   useEffect(() => {
@@ -1080,8 +1082,18 @@ export function PreviewViewport() {
           <div
             className="relative"
             ref={channelDropdownRef}
-            onMouseEnter={() => setChannelDropdownOpen(true)}
-            onMouseLeave={() => setChannelDropdownOpen(false)}
+            onMouseEnter={() => {
+              if (channelCloseTimeout.current) {
+                clearTimeout(channelCloseTimeout.current);
+                channelCloseTimeout.current = null;
+              }
+              setChannelDropdownOpen(true);
+            }}
+            onMouseLeave={() => {
+              channelCloseTimeout.current = setTimeout(() => {
+                setChannelDropdownOpen(false);
+              }, 1000);
+            }}
           >
             <button
               onClick={() => {
@@ -1128,8 +1140,18 @@ export function PreviewViewport() {
           <div
             className="relative"
             ref={hudDropdownRef}
-            onMouseEnter={() => setHudDropdownOpen(true)}
-            onMouseLeave={() => setHudDropdownOpen(false)}
+            onMouseEnter={() => {
+              if (hudCloseTimeout.current) {
+                clearTimeout(hudCloseTimeout.current);
+                hudCloseTimeout.current = null;
+              }
+              setHudDropdownOpen(true);
+            }}
+            onMouseLeave={() => {
+              hudCloseTimeout.current = setTimeout(() => {
+                setHudDropdownOpen(false);
+              }, 1000);
+            }}
           >
             <button
               onClick={() => setHudVisible(!hudVisible)}
