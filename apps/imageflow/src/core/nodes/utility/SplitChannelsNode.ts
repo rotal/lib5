@@ -8,6 +8,7 @@ export const SplitChannelsNode = defineNode({
   name: 'Split Channels',
   description: 'Split image into RGBA channels',
   icon: 'layers_clear',
+  hasLocalTransform: true,
 
   inputs: [
     {

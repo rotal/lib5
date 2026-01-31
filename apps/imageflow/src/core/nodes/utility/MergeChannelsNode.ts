@@ -7,6 +7,7 @@ export const MergeChannelsNode = defineNode({
   name: 'Merge Channels',
   description: 'Merge RGBA channels into single image',
   icon: 'layers',
+  hasLocalTransform: true,
 
   inputs: [
     {

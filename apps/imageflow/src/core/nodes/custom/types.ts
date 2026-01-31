@@ -39,6 +39,8 @@ export interface CustomGPUNodeConfig {
   description: string;
   /** Material icon name */
   icon?: string;
+  /** If true, node has built-in local transform params */
+  hasLocalTransform?: boolean;
 
   /** Input port definitions */
   inputs: PortDefinition[];

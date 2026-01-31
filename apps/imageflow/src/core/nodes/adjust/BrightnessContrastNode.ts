@@ -8,6 +8,7 @@ export const BrightnessContrastNode = defineNode({
   name: 'Brightness/Contrast',
   description: 'Adjust image brightness and contrast',
   icon: 'brightness_6',
+  hasLocalTransform: true,
 
   inputs: [
     {

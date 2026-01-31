@@ -8,6 +8,7 @@ export const LevelsNode = defineNode({
   name: 'Levels',
   description: 'Adjust input/output levels with gamma',
   icon: 'tune',
+  hasLocalTransform: true,
 
   inputs: [
     {

@@ -7,6 +7,7 @@ export const MaskOperationsNode = defineNode({
   name: 'Mask Operations',
   description: 'Modify mask with expand, contract, feather, invert',
   icon: 'select_all',
+  hasLocalTransform: true,
 
   inputs: [
     {

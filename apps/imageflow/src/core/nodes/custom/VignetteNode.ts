@@ -6,6 +6,7 @@ export const VignetteNode = defineCustomGPUNode({
   name: 'Vignette',
   description: 'Darken the edges of the image',
   icon: 'vignette',
+  hasLocalTransform: true,
 
   inputs: [
     { id: 'image', name: 'Image', dataType: 'image', required: true },

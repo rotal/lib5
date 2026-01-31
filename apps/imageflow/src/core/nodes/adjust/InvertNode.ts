@@ -8,6 +8,7 @@ export const InvertNode = defineNode({
   name: 'Invert',
   description: 'Invert image colors',
   icon: 'invert_colors',
+  hasLocalTransform: true,
 
   inputs: [
     {

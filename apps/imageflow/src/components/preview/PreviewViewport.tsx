@@ -2,8 +2,26 @@ import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { useExecutionStore, useUiStore, useGraphStore } from '../../store';
 import { isFloatImage, floatToImageData, isGPUTexture, type FloatImage, type Transform2D, IDENTITY_TRANSFORM, transformPoint } from '../../types/data';
 import type { GPUTexture } from '../../types/gpu';
+import type { GizmoDefinition } from '../../types/node';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
 import { GizmoOverlay } from './GizmoOverlay';
+
+/**
+ * Generate a standard gizmo definition for nodes with hasLocalTransform.
+ * Uses the _ prefixed parameter names.
+ */
+function createLocalTransformGizmo(): GizmoDefinition {
+  return {
+    handles: [],
+    showBoundingBox: true,
+    showRotation: true,
+    rotationParam: '_angle',
+    pivotParams: ['_px', '_py'],
+    scaleParams: ['_sx', '_sy'],
+    translateParams: ['_tx', '_ty'],
+    translateCoordSystem: 'pixels',
+  };
+}
 
 const PREVIEW_SLOT_COLORS = ['#ef4444', '#22c55e', '#3b82f6']; // Red, Green, Blue for slots 1, 2, 3
 
@@ -103,7 +121,7 @@ export function PreviewViewport() {
   const canvasSettings = graph.canvas;
 
   // Determine which node should show a gizmo (if any)
-  // Show gizmo for a selected node that is in a preview slot and has a gizmo definition
+  // Show gizmo for a selected node that is in a preview slot and has a gizmo definition or hasLocalTransform
   const gizmoNode = useMemo(() => {
     // Check if any selected node is in a preview slot
     const selectedArray = Array.from(selectedNodeIds);
@@ -113,9 +131,13 @@ export function PreviewViewport() {
         const node = graph.nodes[nodeId];
         if (node) {
           const def = NodeRegistry.get(node.type);
+          // Prefer explicit gizmo definition, fall back to generated one for hasLocalTransform nodes
           if (def?.gizmo) {
-            console.log('[Gizmo] Showing gizmo for node:', node.type, nodeId);
+            console.log('[Gizmo] Showing explicit gizmo for node:', node.type, nodeId);
             return { node, gizmo: def.gizmo };
+          } else if (def?.hasLocalTransform) {
+            console.log('[Gizmo] Showing local transform gizmo for node:', node.type, nodeId);
+            return { node, gizmo: createLocalTransformGizmo() };
           } else {
             console.log('[Gizmo] Node has no gizmo definition:', node.type);
           }

@@ -8,6 +8,7 @@ export const ReorderChannelsNode = defineNode({
   name: 'Reorder Channels',
   description: 'Remap and reorder RGBA channels',
   icon: 'shuffle',
+  hasLocalTransform: true,
 
   inputs: [
     {

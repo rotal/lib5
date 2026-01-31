@@ -7,6 +7,7 @@ export const ApplyMaskNode = defineNode({
   name: 'Apply Mask',
   description: 'Apply mask to image alpha channel',
   icon: 'photo_filter',
+  hasLocalTransform: true,
 
   inputs: [
     {

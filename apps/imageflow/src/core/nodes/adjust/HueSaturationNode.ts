@@ -62,6 +62,7 @@ export const HueSaturationNode = defineNode({
   name: 'Hue/Saturation',
   description: 'Adjust hue, saturation, and lightness',
   icon: 'color_lens',
+  hasLocalTransform: true,
 
   inputs: [
     {

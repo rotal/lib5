@@ -170,15 +170,35 @@ export function GizmoOverlay({
   }, [node.parameters, gizmo.pivotParams, gizmo.translateParams, imageWidth, imageHeight]);
 
   // Get bounding box corners considering scale and rotation
+  // Uses gizmo definition to get the correct parameter names
   const getBoundingBox = useCallback(() => {
     const params = node.parameters;
-    const scaleX = (params.scaleX as number) ?? 1;
-    const scaleY = (params.scaleY as number) ?? 1;
-    const angle = ((params.angle as number) ?? 0) * (Math.PI / 180);
-    const offsetX = (params.offsetX as number) ?? 0;
-    const offsetY = (params.offsetY as number) ?? 0;
-    const pivotX = (params.pivotX as number) ?? 0.5;
-    const pivotY = (params.pivotY as number) ?? 0.5;
+    // Get scale from gizmo's scaleParams or fallback to hardcoded names
+    const scaleX = gizmo.scaleParams
+      ? ((params[gizmo.scaleParams[0]] as number) ?? 1)
+      : ((params.scaleX as number) ?? 1);
+    const scaleY = gizmo.scaleParams
+      ? ((params[gizmo.scaleParams[1]] as number) ?? 1)
+      : ((params.scaleY as number) ?? 1);
+    // Get rotation from gizmo's rotationParam or fallback
+    const angleDeg = gizmo.rotationParam
+      ? ((params[gizmo.rotationParam] as number) ?? 0)
+      : ((params.angle as number) ?? 0);
+    const angle = angleDeg * (Math.PI / 180);
+    // Get offset from gizmo's translateParams or fallback
+    const offsetX = gizmo.translateParams
+      ? ((params[gizmo.translateParams[0]] as number) ?? 0)
+      : ((params.offsetX as number) ?? 0);
+    const offsetY = gizmo.translateParams
+      ? ((params[gizmo.translateParams[1]] as number) ?? 0)
+      : ((params.offsetY as number) ?? 0);
+    // Get pivot from gizmo's pivotParams or fallback
+    const pivotX = gizmo.pivotParams
+      ? ((params[gizmo.pivotParams[0]] as number) ?? 0.5)
+      : ((params.pivotX as number) ?? 0.5);
+    const pivotY = gizmo.pivotParams
+      ? ((params[gizmo.pivotParams[1]] as number) ?? 0.5)
+      : ((params.pivotY as number) ?? 0.5);
 
     const px = imageWidth * pivotX;
     const py = imageHeight * pivotY;
@@ -205,7 +225,7 @@ export function GizmoOverlay({
         y: ry + py + offsetY,
       };
     });
-  }, [node.parameters, imageWidth, imageHeight]);
+  }, [node.parameters, gizmo, imageWidth, imageHeight]);
 
   // Handle mouse down on a gizmo handle
   const handleMouseDown = useCallback(
@@ -875,8 +895,10 @@ export function GizmoOverlay({
     const colorXHover = isTranslateMode ? '#ff6666' : '#fb923c';
     const colorYHover = isTranslateMode ? '#66ff66' : '#a3e635';
 
-    // Get current rotation angle for local-space axes
-    const angleDeg = (node.parameters.angle as number) ?? 0;
+    // Get current rotation angle for local-space axes (from gizmo's rotationParam or fallback)
+    const angleDeg = gizmo.rotationParam
+      ? ((node.parameters[gizmo.rotationParam] as number) ?? 0)
+      : ((node.parameters.angle as number) ?? 0);
 
     // Use CSS transform for GPU-accelerated positioning
     // Pivot mode: rotate axes to match image rotation (local space)

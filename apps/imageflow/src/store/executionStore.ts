@@ -22,6 +22,8 @@ interface ExecutionActions {
   abort: () => void;
   clearCache: () => void;
   markNodesDirty: (nodeIds: string[]) => void;
+  setNodeErrors: (errors: Array<{ nodeId: string; message: string }>) => void;
+  clearNodeErrors: () => void;
   getNodeOutput: (nodeId: string) => Record<string, PortValue> | undefined;
   downloadGPUTexture: (texture: GPUTexture) => FloatImage | null;
 }
@@ -169,6 +171,28 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>((set,
       for (const nodeId of nodeIds) {
         if (newStates[nodeId]) {
           newStates[nodeId] = { ...newStates[nodeId], executionState: 'pending' };
+        }
+      }
+      return { nodeStates: newStates };
+    });
+  },
+
+  setNodeErrors: (errors) => {
+    set((state) => {
+      const newStates = { ...state.nodeStates };
+      for (const { nodeId, message } of errors) {
+        newStates[nodeId] = { executionState: 'error', progress: 0, error: message };
+      }
+      return { nodeStates: newStates };
+    });
+  },
+
+  clearNodeErrors: () => {
+    set((state) => {
+      const newStates = { ...state.nodeStates };
+      for (const nodeId of Object.keys(newStates)) {
+        if (newStates[nodeId]?.executionState === 'error') {
+          newStates[nodeId] = { executionState: 'idle', progress: 0 };
         }
       }
       return { nodeStates: newStates };

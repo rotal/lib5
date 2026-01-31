@@ -34,6 +34,7 @@ export const MathNode = defineNode({
   name: 'Math',
   description: 'Perform mathematical operations on numbers, images, or masks',
   icon: 'calculate',
+  hasLocalTransform: true,
 
   inputs: [
     {

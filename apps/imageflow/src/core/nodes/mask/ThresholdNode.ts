@@ -8,6 +8,7 @@ export const ThresholdNode = defineNode({
   name: 'Threshold',
   description: 'Create mask from luminance threshold',
   icon: 'contrast',
+  hasLocalTransform: true,
 
   inputs: [
     {

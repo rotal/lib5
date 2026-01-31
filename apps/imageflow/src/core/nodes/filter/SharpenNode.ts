@@ -7,6 +7,7 @@ export const SharpenNode = defineNode({
   name: 'Sharpen',
   description: 'Sharpen image using unsharp mask',
   icon: 'details',
+  hasLocalTransform: true,
 
   inputs: [
     {

@@ -233,11 +233,20 @@ export function TopToolbar() {
   const handleExecute = useCallback(async () => {
     const validation = validateGraph(graph);
     if (!validation.valid) {
+      // Set error states on nodes with validation errors
+      const nodeErrors = validation.errors
+        .filter(e => e.nodeId)
+        .map(e => ({ nodeId: e.nodeId!, message: e.message }));
+      executionStore.setNodeErrors(nodeErrors);
+
       const errorMsg = validation.errors.map(e => e.message).join('\n');
       showToast('error', errorMsg, 5000);
       console.error('Validation errors:', validation.errors);
       return;
     }
+
+    // Clear any previous validation errors
+    executionStore.clearNodeErrors();
 
     if (validation.warnings.length > 0) {
       validation.warnings.forEach(w => {
@@ -253,7 +262,7 @@ export function TopToolbar() {
       showToast('error', `Execution failed: ${(error as Error).message}`, 5000);
       console.error('Execution error:', error);
     }
-  }, [executeGraph, graph, showToast]);
+  }, [executeGraph, executionStore, graph, showToast]);
 
   // Drive dialog handlers
   const handleDriveOpen = useCallback((content: any, fileId: string, fileName: string) => {

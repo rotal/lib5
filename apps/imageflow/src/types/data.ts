@@ -64,6 +64,23 @@ export const IDENTITY_TRANSFORM: Transform2D = {
   a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0,
 };
 
+/**
+ * Check if local transform parameters represent an identity transform (no change).
+ * Used to skip transform computation when values are default.
+ * @param params Node parameters containing _tx, _ty, _sx, _sy, _angle, _px, _py
+ */
+export function isIdentityLocalTransform(params: Record<string, unknown>): boolean {
+  return (
+    (params._tx ?? 0) === 0 &&
+    (params._ty ?? 0) === 0 &&
+    (params._sx ?? 1) === 1 &&
+    (params._sy ?? 1) === 1 &&
+    (params._angle ?? 0) === 0 &&
+    (params._px ?? 0.5) === 0.5 &&
+    (params._py ?? 0.5) === 0.5
+  );
+}
+
 /** Create a translation transform */
 export function translateTransform(tx: number, ty: number): Transform2D {
   return { a: 1, b: 0, c: 0, d: 1, tx, ty };

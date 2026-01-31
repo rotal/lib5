@@ -1,6 +1,6 @@
 import { Graph, GraphExecutionState } from '../../types/graph';
 import { NodeRuntimeState, ExecutionContext } from '../../types/node';
-import { PortValue, DataType, isGPUTexture, isFloatImage, coercePortValue } from '../../types/data';
+import { PortValue, DataType, isGPUTexture, isFloatImage, coercePortValue, isIdentityLocalTransform, createPivotTransform, multiplyTransform, IDENTITY_TRANSFORM, FloatImage, imageDataToFloat } from '../../types/data';
 import { GPUContext } from '../../types/gpu';
 import { NodeRegistry } from './NodeRegistry';
 import { topologicalSort, getPartialExecutionOrder } from './TopologicalSort';
@@ -151,9 +151,30 @@ export class GraphEngine {
     // Validate graph first
     const validation = validateGraph(this.graph);
     if (!validation.valid) {
+      // Mark individual nodes with errors
+      for (const error of validation.errors) {
+        if (error.nodeId) {
+          this.state.nodeStates[error.nodeId] = {
+            executionState: 'error',
+            progress: 0,
+            error: error.message,
+          };
+          this.callbacks.onNodeError?.(error.nodeId, new Error(error.message));
+        }
+      }
       const errorMsg = validation.errors.map(e => e.message).join('; ');
       this.callbacks.onExecutionError?.(new Error(errorMsg));
       throw new Error(`Graph validation failed: ${errorMsg}`);
+    }
+
+    // Clear any previous validation errors from nodes that are now valid
+    for (const nodeId of Object.keys(this.state.nodeStates)) {
+      if (this.state.nodeStates[nodeId]?.executionState === 'error') {
+        this.state.nodeStates[nodeId] = {
+          executionState: 'idle',
+          progress: 0,
+        };
+      }
     }
 
     // Get execution order
@@ -309,12 +330,13 @@ export class GraphEngine {
       let outputs = await definition.execute(inputs, node.parameters, context);
       const executionTime = performance.now() - startTime;
 
-      // If preview is enabled, convert GPU textures to ImageData for display
+      // If preview is enabled, convert GPU textures to FloatImage for display
+      // This must happen BEFORE applyLocalTransform so transform can be applied to FloatImage
       if (node.parameters.preview && this.gpuContext) {
         const previewOutputs: Record<string, PortValue> = {};
         for (const [key, value] of Object.entries(outputs)) {
           if (isGPUTexture(value)) {
-            // Download texture to ImageData for preview
+            // Download texture to FloatImage for preview
             previewOutputs[key] = this.gpuContext.downloadTexture(value);
             // Release the GPU texture since we've downloaded it
             this.gpuContext.releaseTexture(value.id);
@@ -323,6 +345,12 @@ export class GraphEngine {
           }
         }
         outputs = previewOutputs;
+      }
+
+      // Apply local transform if node has hasLocalTransform and transform is not identity
+      // This applies transform to FloatImage/ImageData outputs (after GPU download if preview enabled)
+      if (definition.hasLocalTransform && !isIdentityLocalTransform(node.parameters)) {
+        outputs = this.applyLocalTransform(outputs, node.parameters, definition);
       }
 
       // Cache outputs
@@ -346,6 +374,77 @@ export class GraphEngine {
       this.callbacks.onNodeError?.(nodeId, error as Error);
       throw error;
     }
+  }
+
+  /**
+   * Apply local transform parameters to node outputs.
+   * Handles FloatImage, ImageData, and GPUTexture outputs.
+   */
+  private applyLocalTransform(
+    outputs: Record<string, PortValue>,
+    params: Record<string, unknown>,
+    definition: { outputs: Array<{ id: string; dataType: string }> }
+  ): Record<string, PortValue> {
+    const tx = (params._tx as number) ?? 0;
+    const ty = (params._ty as number) ?? 0;
+    const sx = (params._sx as number) ?? 1;
+    const sy = (params._sy as number) ?? 1;
+    const angleDeg = (params._angle as number) ?? 0;
+    const px = (params._px as number) ?? 0.5;
+    const py = (params._py as number) ?? 0.5;
+
+    const transformedOutputs: Record<string, PortValue> = {};
+
+    for (const [key, value] of Object.entries(outputs)) {
+      // Only transform image/mask outputs
+      const outputDef = definition.outputs.find(o => o.id === key);
+      const isImageOutput = outputDef && (outputDef.dataType === 'image' || outputDef.dataType === 'mask');
+
+      if (isImageOutput && (isFloatImage(value) || value instanceof ImageData || isGPUTexture(value))) {
+        // Convert to FloatImage if needed
+        let img: FloatImage;
+        if (value instanceof ImageData) {
+          img = imageDataToFloat(value);
+        } else if (isGPUTexture(value)) {
+          // Download GPUTexture to FloatImage so we can attach transform
+          if (this.gpuContext) {
+            img = this.gpuContext.downloadTexture(value);
+            this.gpuContext.releaseTexture(value.id);
+          } else {
+            // No GPU context, can't download - pass through unchanged
+            transformedOutputs[key] = value;
+            continue;
+          }
+        } else {
+          img = value as FloatImage;
+        }
+
+        // Pivot point in pixel coordinates
+        const pivotX = img.width * px;
+        const pivotY = img.height * py;
+
+        // Create transform matrix
+        const angleRad = angleDeg * (Math.PI / 180);
+        const nodeTransform = createPivotTransform(sx, sy, angleRad, pivotX, pivotY, tx, ty);
+
+        // Compose with existing transform (if any)
+        const existingTransform = img.transform ?? IDENTITY_TRANSFORM;
+        const combinedTransform = multiplyTransform(nodeTransform, existingTransform);
+
+        // Return image with updated transform - NO pixel resampling
+        transformedOutputs[key] = {
+          data: img.data,
+          width: img.width,
+          height: img.height,
+          transform: combinedTransform,
+          origin: img.origin,
+        };
+      } else {
+        transformedOutputs[key] = value;
+      }
+    }
+
+    return transformedOutputs;
   }
 
   /**

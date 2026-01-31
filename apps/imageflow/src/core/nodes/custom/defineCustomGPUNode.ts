@@ -217,6 +217,7 @@ export function defineCustomGPUNode(config: CustomGPUNodeConfig): NodeDefinition
     name: config.name,
     description: config.description,
     icon: config.icon,
+    hasLocalTransform: config.hasLocalTransform,
     inputs: config.inputs,
     outputs: config.outputs,
     parameters: finalParameters,

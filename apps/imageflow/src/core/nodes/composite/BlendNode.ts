@@ -142,6 +142,7 @@ export const BlendNode = defineNode({
   name: 'Blend',
   description: 'Blend two images with various blend modes',
   icon: 'layers',
+  hasLocalTransform: true,
 
   inputs: [
     {
