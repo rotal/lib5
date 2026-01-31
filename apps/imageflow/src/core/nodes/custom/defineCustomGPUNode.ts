@@ -109,6 +109,9 @@ export function defineCustomGPUNode(config: CustomGPUNodeConfig): NodeDefinition
 
     const preview = params.preview as boolean;
 
+    // Preserve transform from input FloatImage (GPU textures can't store transform)
+    const inputTransform = isFloatImage(input) ? input.transform : undefined;
+
     // GPU is required for custom GPU nodes
     if (!context.gpu?.isAvailable) {
       throw new Error(`GPU is required for custom node ${config.type}`);
@@ -201,9 +204,13 @@ export function defineCustomGPUNode(config: CustomGPUNodeConfig): NodeDefinition
     }
 
     // Return GPU texture or download based on preview setting
-    if (preview) {
+    // If input had transform, we must download to preserve it (GPUTexture can't store transform)
+    if (preview || inputTransform) {
       const result = gpu.downloadTexture(outputTexture);
       gpu.releaseTexture(outputTexture.id);
+      if (inputTransform) {
+        result.transform = inputTransform;
+      }
       return { image: result };
     }
 
