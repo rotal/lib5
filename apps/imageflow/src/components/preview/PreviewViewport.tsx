@@ -40,6 +40,8 @@ export function PreviewViewport() {
   const [hudModes, setHudModes] = useState<Set<'viewport' | 'image' | 'transform' | 'borders'>>(new Set());
   const [hudDropdownOpen, setHudDropdownOpen] = useState(false);
   const [channelDropdownOpen, setChannelDropdownOpen] = useState(false);
+  const [toolbarPinned, setToolbarPinned] = useState(false);
+  const [toolbarHovered, setToolbarHovered] = useState(false);
   const hudDropdownRef = useRef<HTMLDivElement>(null);
   const channelDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -977,7 +979,13 @@ export function PreviewViewport() {
       onKeyDown={handleKeyDown}
     >
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl overflow-visible relative z-10">
+      <div
+        className={`flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl overflow-visible relative z-10 transition-all duration-200 ${
+          !toolbarPinned && !toolbarHovered ? '-translate-y-full opacity-0' : 'translate-y-0 opacity-100'
+        }`}
+        onMouseEnter={() => setToolbarHovered(true)}
+        onMouseLeave={() => setToolbarHovered(false)}
+      >
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-editor-text">Preview</span>
           {/* Preview slot buttons */}
@@ -1170,14 +1178,34 @@ export function PreviewViewport() {
             </div>
           </button>
         </div>
-        <button
-          onClick={handleActualSize}
-          className="px-2 py-0.5 text-xs text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light rounded transition-colors"
-          title="Click for 1:1 actual size"
-        >
-          {Math.round(zoom * 100)}%
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleActualSize}
+            className="px-2 py-0.5 text-xs text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light rounded transition-colors"
+            title="Click for 1:1 actual size"
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            onClick={() => setToolbarPinned(!toolbarPinned)}
+            className={`px-1.5 py-0.5 text-xs rounded transition-colors ${
+              toolbarPinned
+                ? 'text-sky-300'
+                : 'text-editor-text-dim hover:text-editor-text'
+            }`}
+            title={toolbarPinned ? 'Unpin toolbar' : 'Pin toolbar'}
+          >
+            📌
+          </button>
+        </div>
       </div>
+      {/* Hover zone to show toolbar when hidden */}
+      {!toolbarPinned && !toolbarHovered && (
+        <div
+          className="absolute top-0 left-0 right-0 h-8 z-10"
+          onMouseEnter={() => setToolbarHovered(true)}
+        />
+      )}
 
       {/* Canvas container */}
       <div
