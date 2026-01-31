@@ -1,8 +1,9 @@
 import { useCallback, useRef, useEffect, useState } from 'react';
 import { useUiStore } from '../../store/uiStore';
 import { CodeView } from './CodeView';
+import { LogView } from './LogView';
 
-type TabId = 'code';
+type TabId = 'code' | 'logs';
 
 export function BottomCodePanel() {
   const {
@@ -68,6 +69,15 @@ export function BottomCodePanel() {
       icon: (
         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+      ),
+    },
+    {
+      id: 'logs',
+      label: 'Logs',
+      icon: (
+        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h7" />
         </svg>
       ),
     },
@@ -149,6 +159,7 @@ export function BottomCodePanel() {
         }`}
       >
         {activeTab === 'code' && <CodeView />}
+        {activeTab === 'logs' && <LogView />}
       </div>
     </div>
   );
