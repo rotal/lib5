@@ -48,6 +48,7 @@ export function PreviewViewport() {
   const channelDropdownRef = useRef<HTMLDivElement>(null);
   const hudCloseTimeout = useRef<NodeJS.Timeout | null>(null);
   const channelCloseTimeout = useRef<NodeJS.Timeout | null>(null);
+  const toolbarCloseTimeout = useRef<NodeJS.Timeout | null>(null);
 
   // Close dropdowns on click outside
   useEffect(() => {
@@ -991,11 +992,21 @@ export function PreviewViewport() {
       )}
       {/* Toolbar */}
       <div
-        className={`absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl overflow-visible z-20 transition-all duration-200 ${
+        className={`absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl overflow-visible z-20 transition-all duration-500 ${
           !toolbarPinned && !toolbarHovered ? '-translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
         }`}
-        onMouseEnter={() => setToolbarHovered(true)}
-        onMouseLeave={() => setToolbarHovered(false)}
+        onMouseEnter={() => {
+          if (toolbarCloseTimeout.current) {
+            clearTimeout(toolbarCloseTimeout.current);
+            toolbarCloseTimeout.current = null;
+          }
+          setToolbarHovered(true);
+        }}
+        onMouseLeave={() => {
+          toolbarCloseTimeout.current = setTimeout(() => {
+            setToolbarHovered(false);
+          }, 1000);
+        }}
       >
         <div className="flex items-center gap-2">
           {/* Preview slot buttons */}
@@ -1087,6 +1098,7 @@ export function PreviewViewport() {
                 clearTimeout(channelCloseTimeout.current);
                 channelCloseTimeout.current = null;
               }
+              setHudDropdownOpen(false);
               setChannelDropdownOpen(true);
             }}
             onMouseLeave={() => {
@@ -1112,8 +1124,9 @@ export function PreviewViewport() {
             >
               {channelMode.toUpperCase()}
             </button>
-            {channelDropdownOpen && (
-              <div className="absolute top-full left-0 mt-2 bg-editor-surface/70 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[70px] py-1">
+            <div className={`absolute top-full left-0 mt-2 bg-editor-surface/70 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[70px] py-1 transition-opacity duration-300 ${
+              channelDropdownOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}>
                 {(['rgba', 'r', 'g', 'b', 'a'] as const).map((ch) => (
                   <button
                     key={ch}
@@ -1133,8 +1146,7 @@ export function PreviewViewport() {
                     <span>{ch.toUpperCase()}</span>
                   </button>
                 ))}
-              </div>
-            )}
+            </div>
           </div>
           {/* HUD mode dropdown */}
           <div
@@ -1145,6 +1157,7 @@ export function PreviewViewport() {
                 clearTimeout(hudCloseTimeout.current);
                 hudCloseTimeout.current = null;
               }
+              setChannelDropdownOpen(false);
               setHudDropdownOpen(true);
             }}
             onMouseLeave={() => {
@@ -1164,8 +1177,9 @@ export function PreviewViewport() {
             >
               <span className="font-medium">HUD</span>
             </button>
-            {hudDropdownOpen && (
-              <div className="absolute top-full left-0 mt-2 bg-editor-surface/70 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[140px] overflow-hidden py-1">
+            <div className={`absolute top-full left-0 mt-2 bg-editor-surface/70 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[140px] overflow-hidden py-1 transition-opacity duration-300 ${
+              hudDropdownOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}>
                 {([
                   { id: 'viewport', icon: '⊞', label: 'Viewport' },
                   { id: 'image', icon: '◫', label: 'Image' },
@@ -1194,8 +1208,7 @@ export function PreviewViewport() {
                     <span className="w-4 text-center text-[10px]">{hudModes.has(id) ? '✓' : ''}</span>
                   </button>
                 ))}
-              </div>
-            )}
+            </div>
           </div>
           {/* Background toggle - cycles through check/grid/black */}
           <button
