@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { useExecutionStore, useUiStore, useGraphStore, previewFrameCallbacks } from '../../store';
-import { isFloatImage, floatToImageData, isGPUTexture, type FloatImage, type Transform2D, isIdentityTransform, createPivotTransform, invertTransform, transformPoint } from '../../types/data';
+import { isFloatImage, floatToImageData, isGPUTexture, type FloatImage, type Transform2D, isIdentityTransform, createPivotTransform, invertTransform, transformPoint, multiplyTransform, IDENTITY_TRANSFORM } from '../../types/data';
 import type { GPUTexture } from '../../types/gpu';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
 import { GizmoOverlay } from './GizmoOverlay';
@@ -230,7 +230,7 @@ export function PreviewViewport() {
   };
 
   // Helper to get input image info (trace back through connections)
-  const getInputImageInfo = (nodeId: string | null): { nodeId: string; width: number; height: number; transform?: Transform2D } | null => {
+  const getInputImageInfo = useCallback((nodeId: string | null): { nodeId: string; width: number; height: number; transform?: Transform2D } | null => {
     if (!nodeId) return null;
     const graph = useGraphStore.getState().graph;
     const node = graph.nodes[nodeId];
@@ -258,7 +258,7 @@ export function PreviewViewport() {
       }
     }
     return null;
-  };
+  }, [nodeOutputs]);
 
   // Helper to get scalar (non-image) data from node outputs
   const getScalarDataForNode = (nodeId: string | null): { name: string; value: string }[] | null => {
@@ -349,13 +349,34 @@ export function PreviewViewport() {
 
   // Use transforms computed from parameters for TransformNode (real-time feedback)
   // Fall back to cached transforms from node outputs for other nodes
+  // IMPORTANT: When showing gizmo for a TransformNode, we must compose the node's
+  // transform with the INPUT image's existing transform (for chained transforms)
   const gizmoNodeId = gizmoNode?.node.id;
-  const backgroundTransform = gizmoNodeId === backgroundNodeId && gizmoNode?.node.type === 'transform/transform'
-    ? computeTransformFromParams(backgroundNodeId, rawBackgroundImage?.originalWidth ?? 0, rawBackgroundImage?.originalHeight ?? 0)
-    : rawBackgroundImage?.transform;
-  const foregroundTransform = gizmoNodeId === foregroundNodeId && gizmoNode?.node.type === 'transform/transform'
-    ? computeTransformFromParams(foregroundNodeId, rawForegroundImage?.originalWidth ?? 0, rawForegroundImage?.originalHeight ?? 0)
-    : rawForegroundImage?.transform;
+  const backgroundTransform = useMemo(() => {
+    if (gizmoNodeId === backgroundNodeId && gizmoNode?.node.type === 'transform/transform') {
+      // Compute this node's transform from parameters
+      const nodeTransform = computeTransformFromParams(backgroundNodeId, rawBackgroundImage?.originalWidth ?? 0, rawBackgroundImage?.originalHeight ?? 0) ?? IDENTITY_TRANSFORM;
+      // Get the input image's transform (from upstream node)
+      const inputInfo = getInputImageInfo(backgroundNodeId);
+      const inputTransform = inputInfo?.transform ?? IDENTITY_TRANSFORM;
+      // Compose: node's transform applied after input's transform
+      return multiplyTransform(nodeTransform, inputTransform);
+    }
+    return rawBackgroundImage?.transform;
+  }, [gizmoNodeId, backgroundNodeId, gizmoNode?.node.type, rawBackgroundImage?.originalWidth, rawBackgroundImage?.originalHeight, rawBackgroundImage?.transform, computeTransformFromParams, getInputImageInfo]);
+
+  const foregroundTransform = useMemo(() => {
+    if (gizmoNodeId === foregroundNodeId && gizmoNode?.node.type === 'transform/transform') {
+      // Compute this node's transform from parameters
+      const nodeTransform = computeTransformFromParams(foregroundNodeId, rawForegroundImage?.originalWidth ?? 0, rawForegroundImage?.originalHeight ?? 0) ?? IDENTITY_TRANSFORM;
+      // Get the input image's transform (from upstream node)
+      const inputInfo = getInputImageInfo(foregroundNodeId);
+      const inputTransform = inputInfo?.transform ?? IDENTITY_TRANSFORM;
+      // Compose: node's transform applied after input's transform
+      return multiplyTransform(nodeTransform, inputTransform);
+    }
+    return rawForegroundImage?.transform;
+  }, [gizmoNodeId, foregroundNodeId, gizmoNode?.node.type, rawForegroundImage?.originalWidth, rawForegroundImage?.originalHeight, rawForegroundImage?.transform, computeTransformFromParams, getInputImageInfo]);
 
   // Determine what to display
   const hasBackground = backgroundImageData !== null;
