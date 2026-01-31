@@ -35,23 +35,97 @@ export class PDFParser {
   }
 
   parse(): XRefTable {
-    // 1. Find startxref at end of file
-    const startxref = this.findStartXRef();
-    if (startxref === -1) {
-      throw new Error('Cannot find startxref');
+    try {
+      // 1. Find startxref at end of file
+      const startxref = this.findStartXRef();
+      if (startxref === -1) {
+        throw new Error('Cannot find startxref');
+      }
+
+      // 2. Parse xref table(s) and trailer(s)
+      console.log('PDFParser: startxref at', startxref);
+      try {
+        this.parseXRefAt(startxref);
+      } catch (err) {
+        console.warn('PDFParser: parseXRefAt failed, trying fallback search:', err);
+        // Some PDFs have incorrect startxref values - try to find xref by searching
+        this.tryFallbackXRefSearch();
+      }
+      console.log('PDFParser: after parseXRefAt, trailer:', this.trailer ? 'exists' : 'null');
+
+      if (!this.trailer) {
+        // Last resort: try to find trailer by searching backwards
+        console.warn('PDFParser: trailer still null, trying fallback trailer search');
+        this.tryFallbackTrailerSearch();
+      }
+
+      if (!this.trailer) {
+        throw new Error('Cannot find trailer');
+      }
+
+      // Ensure trailer has entries
+      if (!this.trailer.entries) {
+        console.warn('PDFParser: trailer missing entries, creating empty Map');
+        this.trailer.entries = new Map();
+      }
+
+      return {
+        entries: this.xrefTable,
+        trailer: this.trailer,
+      };
+    } catch (err) {
+      console.error('PDFParser.parse error:', err);
+      throw err;
     }
+  }
 
-    // 2. Parse xref table(s) and trailer(s)
-    this.parseXRefAt(startxref);
+  private tryFallbackXRefSearch(): void {
+    // Search for "xref" keyword in the file
+    const xrefBytes = new TextEncoder().encode('xref');
+    let pos = this.lexer.find(xrefBytes, true); // search from end
 
-    if (!this.trailer) {
-      throw new Error('Cannot find trailer');
+    while (pos !== -1 && !this.trailer) {
+      console.log('PDFParser: fallback found xref at', pos);
+      try {
+        this.parseXRefTable(pos);
+        if (this.trailer) return;
+      } catch (e) {
+        console.warn('PDFParser: fallback xref parse failed at', pos, e);
+      }
+      // Try to find another xref before this one
+      if (pos > 0) {
+        this.lexer.position = 0;
+        const nextPos = this.lexer.find(xrefBytes, false);
+        if (nextPos !== -1 && nextPos < pos) {
+          pos = nextPos;
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
     }
+  }
 
-    return {
-      entries: this.xrefTable,
-      trailer: this.trailer,
-    };
+  private tryFallbackTrailerSearch(): void {
+    // Search backwards for "trailer" keyword
+    const trailerBytes = new TextEncoder().encode('trailer');
+    const pos = this.lexer.find(trailerBytes, true);
+
+    if (pos !== -1) {
+      console.log('PDFParser: fallback found trailer at', pos);
+      this.lexer.position = pos + trailerBytes.length;
+      this.lexer.skipWhitespace();
+      try {
+        const trailerDict = this.parseValue() as PDFDict;
+        if (trailerDict && trailerDict.entries) {
+          this.trailer = trailerDict;
+          console.log('PDFParser: fallback trailer parsed successfully');
+        }
+      } catch (e) {
+        console.warn('PDFParser: fallback trailer parse failed:', e);
+      }
+    }
   }
 
   private findStartXRef(): number {
@@ -75,12 +149,23 @@ export class PDFParser {
     this.lexer.skipWhitespace();
 
     // Check if this is xref table or xref stream
-    const peek = this.lexer.substring(offset, offset + 4);
-    if (peek === 'xref') {
-      this.parseXRefTable(offset);
-    } else {
-      // Cross-reference stream
-      this.parseXRefStream(offset);
+    // Use the position AFTER skipping whitespace, not the original offset
+    const currentPos = this.lexer.position;
+    const peek = this.lexer.substring(currentPos, currentPos + 4);
+    console.log('PDFParser: parseXRefAt offset', offset, 'currentPos', currentPos, 'peek:', JSON.stringify(peek));
+    try {
+      if (peek === 'xref') {
+        console.log('PDFParser: parsing xref table');
+        this.parseXRefTable(currentPos);
+      } else {
+        // Cross-reference stream
+        console.log('PDFParser: parsing xref stream');
+        this.parseXRefStream(currentPos);
+      }
+      console.log('PDFParser: after parsing xref, trailer:', this.trailer ? 'exists' : 'null');
+    } catch (err) {
+      console.error('PDFParser: parseXRefAt failed:', err);
+      throw err;
     }
   }
 
@@ -134,22 +219,31 @@ export class PDFParser {
     // Parse trailer dict
     this.lexer.skipWhitespace();
     const trailerDict = this.parseValue() as PDFDict;
+    console.log('PDFParser: parseXRefTable trailerDict:', trailerDict ? 'exists' : 'null',
+      trailerDict?.entries ? `entries.size=${trailerDict.entries.size}` : 'no entries');
 
-    if (!this.trailer) {
-      this.trailer = trailerDict;
-    } else {
-      // Merge with existing trailer (earlier trailer has priority)
-      for (const [key, value] of trailerDict.entries) {
-        if (!this.trailer.entries.has(key)) {
-          this.trailer.entries.set(key, value);
+    if (trailerDict && trailerDict.entries) {
+      if (!this.trailer) {
+        this.trailer = trailerDict;
+        console.log('PDFParser: set trailer from trailerDict');
+      } else if (this.trailer.entries) {
+        // Merge with existing trailer (earlier trailer has priority)
+        for (const [key, value] of trailerDict.entries) {
+          if (!this.trailer.entries.has(key)) {
+            this.trailer.entries.set(key, value);
+          }
         }
       }
+    } else {
+      console.warn('PDFParser: trailerDict missing or has no entries');
     }
 
     // Follow Prev pointer to previous xref
-    const prev = dictGetNumber(trailerDict, 'Prev');
-    if (prev !== undefined) {
-      this.parseXRefAt(prev);
+    if (trailerDict?.entries) {
+      const prev = dictGetNumber(trailerDict, 'Prev');
+      if (prev !== undefined) {
+        this.parseXRefAt(prev);
+      }
     }
   }
 
@@ -158,12 +252,29 @@ export class PDFParser {
 
     // Parse the stream object
     const obj = this.parseIndirectObject();
-    if (!obj || !(obj.value as any).data) {
-      throw new Error('Invalid xref stream');
+    console.log('PDFParser: parseXRefStream obj:', obj ? `objNum=${obj.objNum}` : 'null');
+    if (!obj) {
+      console.error('PDFParser: parseIndirectObject returned null');
+      throw new Error('Invalid xref stream: failed to parse object');
+    }
+    if (!(obj.value as any).data) {
+      console.error('PDFParser: xref stream object has no data, value type:', typeof obj.value);
+      throw new Error('Invalid xref stream: no stream data');
     }
 
     const stream = obj.value as unknown as PDFStream;
     const dict = stream.dict;
+
+    if (!dict) {
+      console.error('parseXRefStream: stream has no dict');
+      throw new Error('Invalid xref stream: missing dictionary');
+    }
+
+    // Ensure dict has entries (create if missing for defensive handling)
+    if (!dict.entries) {
+      console.warn('parseXRefStream: dict missing entries, creating empty Map');
+      dict.entries = new Map();
+    }
 
     // Decode stream
     const data = StreamDecoder.decode(stream);
@@ -231,20 +342,22 @@ export class PDFParser {
     }
 
     // Set trailer from stream dict
-    if (!this.trailer) {
-      this.trailer = dict;
-    } else {
-      for (const [key, value] of dict.entries) {
-        if (!this.trailer.entries.has(key)) {
-          this.trailer.entries.set(key, value);
+    if (dict && dict.entries) {
+      if (!this.trailer) {
+        this.trailer = dict;
+      } else if (this.trailer.entries) {
+        for (const [key, value] of dict.entries) {
+          if (!this.trailer.entries.has(key)) {
+            this.trailer.entries.set(key, value);
+          }
         }
       }
-    }
 
-    // Follow Prev pointer
-    const prev = dictGetNumber(dict, 'Prev');
-    if (prev !== undefined) {
-      this.parseXRefAt(prev);
+      // Follow Prev pointer
+      const prev = dictGetNumber(dict, 'Prev');
+      if (prev !== undefined) {
+        this.parseXRefAt(prev);
+      }
     }
   }
 
@@ -494,6 +607,10 @@ export class PDFParser {
     }
 
     const stream = streamObj as PDFStream;
+    if (!stream.dict || !stream.dict.entries) {
+      console.warn('PDFParser: Object stream missing dict or entries');
+      return undefined;
+    }
     const n = dictGetNumber(stream.dict, 'N') ?? 0;
     const first = dictGetNumber(stream.dict, 'First') ?? 0;
 
