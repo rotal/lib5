@@ -68,11 +68,25 @@ export const appLog = {
   clear: () => useLogStore.getState().clear(),
 };
 
-// Step 2: console.log, all args as strings (no JSON - it crashes)
+// Console interception (no JSON - it crashes)
+const formatArgs = (args: unknown[]) => args.map(a => typeof a === 'string' ? a : String(a)).join(' ');
+
 const _origLog = console.log.bind(console);
+const _origWarn = console.warn.bind(console);
+const _origError = console.error.bind(console);
+
 console.log = (...args: unknown[]) => {
   _origLog(...args);
-  const msg = args.map(a => typeof a === 'string' ? a : String(a)).join(' ');
-  useLogStore.getState().info(msg);
+  useLogStore.getState().info(formatArgs(args));
+};
+
+console.warn = (...args: unknown[]) => {
+  _origWarn(...args);
+  useLogStore.getState().warn(formatArgs(args));
+};
+
+console.error = (...args: unknown[]) => {
+  _origError(...args);
+  useLogStore.getState().error(formatArgs(args));
 };
 
