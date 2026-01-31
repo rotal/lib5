@@ -39,19 +39,24 @@ export function PreviewViewport() {
   const [previewBgMode, setPreviewBgMode] = useState<'check' | 'grid' | 'black'>('check');
   const [hudModes, setHudModes] = useState<Set<'viewport' | 'image' | 'transform' | 'borders'>>(new Set());
   const [hudDropdownOpen, setHudDropdownOpen] = useState(false);
+  const [channelDropdownOpen, setChannelDropdownOpen] = useState(false);
   const hudDropdownRef = useRef<HTMLDivElement>(null);
+  const channelDropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close HUD dropdown on click outside
+  // Close dropdowns on click outside
   useEffect(() => {
-    if (!hudDropdownOpen) return;
+    if (!hudDropdownOpen && !channelDropdownOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
-      if (hudDropdownRef.current && !hudDropdownRef.current.contains(e.target as Node)) {
+      if (hudDropdownOpen && hudDropdownRef.current && !hudDropdownRef.current.contains(e.target as Node)) {
         setHudDropdownOpen(false);
+      }
+      if (channelDropdownOpen && channelDropdownRef.current && !channelDropdownRef.current.contains(e.target as Node)) {
+        setChannelDropdownOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [hudDropdownOpen]);
+  }, [hudDropdownOpen, channelDropdownOpen]);
   const [gizmoMode, setGizmoMode] = useState<'translate' | 'pivot'>('translate');
   const [gizmoVisibility, setGizmoVisibility] = useState<'all' | 'translate' | 'rotate' | 'scale'>('all');
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -1056,52 +1061,63 @@ export function PreviewViewport() {
           )}
           {/* Channel isolation */}
           <span className="text-editor-text-dim text-xs mx-1">|</span>
-          <select
-            id="preview-channel-mode"
-            name="preview-channel-mode"
-            value={channelMode}
-            onChange={(e) => setChannelMode(e.target.value as typeof channelMode)}
-            className="px-1.5 py-0.5 text-xs font-bold rounded bg-editor-surface-light border border-editor-border text-editor-text cursor-pointer focus:outline-none focus:border-editor-accent"
-            title="Channel view"
-          >
-            <option value="rgba">RGBA</option>
-            <option value="r">R</option>
-            <option value="g">G</option>
-            <option value="b">B</option>
-            <option value="a">A</option>
-          </select>
+          <div className="relative" ref={channelDropdownRef}>
+            <button
+              onClick={() => setChannelDropdownOpen(!channelDropdownOpen)}
+              className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors ${
+                channelMode !== 'rgba'
+                  ? 'text-editor-text'
+                  : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light'
+              }`}
+              title="Channel view"
+            >
+              <span>{channelMode.toUpperCase()}</span>
+              <span className="text-[10px]">▾</span>
+            </button>
+            {channelDropdownOpen && (
+              <div className="absolute top-full left-0 mt-1 bg-editor-surface-solid border border-editor-border rounded shadow-lg z-50 min-w-[70px] py-1">
+                {(['rgba', 'r', 'g', 'b', 'a'] as const).map((ch) => (
+                  <button
+                    key={ch}
+                    onClick={() => {
+                      setChannelMode(ch);
+                      setChannelDropdownOpen(false);
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
+                      channelMode === ch
+                        ? 'text-editor-text'
+                        : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light/50'
+                    }`}
+                  >
+                    <span className="w-4 text-center text-[10px]">{channelMode === ch ? '✓' : ''}</span>
+                    <span>{ch.toUpperCase()}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           {/* HUD mode dropdown */}
           <div className="relative" ref={hudDropdownRef}>
             <button
               onClick={() => setHudDropdownOpen(!hudDropdownOpen)}
-              className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-all duration-150 ${
+              className={`flex items-center gap-1 px-2 py-0.5 text-xs rounded transition-colors ${
                 hudModes.size > 0
-                  ? 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.3)]'
-                  : 'bg-editor-surface-light/50 text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
+                  ? 'text-editor-text'
+                  : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light'
               }`}
               title="HUD overlay"
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              <span className="font-medium">HUD</span>
-              {hudModes.size > 0 && (
-                <span className="ml-0.5 w-4 h-4 rounded-full bg-amber-500/30 text-[9px] flex items-center justify-center font-bold">
-                  {hudModes.size}
-                </span>
-              )}
+              <span>HUD</span>
+              <span className="text-[10px]">▾</span>
             </button>
             {hudDropdownOpen && (
-              <div className="absolute top-full right-0 mt-2 bg-editor-surface-solid/95 backdrop-blur-sm border border-editor-border/50 rounded-lg shadow-xl z-50 min-w-[140px] overflow-hidden">
-                <div className="px-3 py-2 border-b border-editor-border/30 text-[10px] text-editor-text-dim uppercase tracking-wider font-medium">
-                  Display Options
-                </div>
+              <div className="absolute top-full right-0 mt-1 bg-editor-surface-solid border border-editor-border rounded shadow-lg z-50 min-w-[120px] py-1">
                 {([
-                  { id: 'viewport', icon: '⊞', label: 'Viewport' },
-                  { id: 'image', icon: '◫', label: 'Image' },
-                  { id: 'transform', icon: '⟲', label: 'Transform' },
-                  { id: 'borders', icon: '▢', label: 'Borders' },
-                ] as const).map(({ id, icon, label }) => (
+                  { id: 'viewport', label: 'Viewport' },
+                  { id: 'image', label: 'Image' },
+                  { id: 'transform', label: 'Transform' },
+                  { id: 'borders', label: 'Borders' },
+                ] as const).map(({ id, label }) => (
                   <button
                     key={id}
                     onClick={() => {
@@ -1113,21 +1129,14 @@ export function PreviewViewport() {
                       }
                       setHudModes(newModes);
                     }}
-                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-all duration-100 ${
+                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
                       hudModes.has(id)
-                        ? 'bg-amber-500/15 text-amber-300'
-                        : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
+                        ? 'text-editor-text'
+                        : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light/50'
                     }`}
                   >
-                    <span className="w-4 text-center opacity-70">{icon}</span>
-                    <span className="flex-1 text-left">{label}</span>
-                    <div className={`w-8 h-4 rounded-full transition-all duration-150 ${
-                      hudModes.has(id) ? 'bg-amber-500' : 'bg-editor-surface-light'
-                    }`}>
-                      <div className={`w-3 h-3 rounded-full bg-white shadow-sm transform transition-transform duration-150 mt-0.5 ${
-                        hudModes.has(id) ? 'translate-x-4.5 ml-0.5' : 'translate-x-0.5'
-                      }`} style={{ marginLeft: hudModes.has(id) ? '1rem' : '0.125rem' }} />
-                    </div>
+                    <span className="w-4 text-center text-[10px]">{hudModes.has(id) ? '✓' : ''}</span>
+                    <span>{label}</span>
                   </button>
                 ))}
               </div>
