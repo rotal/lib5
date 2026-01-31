@@ -1113,10 +1113,7 @@ export function PreviewViewport() {
               <span className="font-medium">HUD</span>
             </button>
             {hudDropdownOpen && (
-              <div className="absolute top-full right-0 mt-2 bg-editor-surface/70 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[140px] overflow-hidden">
-                <div className="px-3 py-2 border-b border-white/10 text-[10px] text-editor-text-dim uppercase tracking-wider font-medium">
-                  Display Options
-                </div>
+              <div className="absolute top-full right-0 mt-2 bg-editor-surface/70 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[140px] overflow-hidden py-1">
                 {([
                   { id: 'viewport', icon: '⊞', label: 'Viewport' },
                   { id: 'image', icon: '◫', label: 'Image' },
