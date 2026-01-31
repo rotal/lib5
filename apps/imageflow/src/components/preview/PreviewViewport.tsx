@@ -1064,11 +1064,7 @@ export function PreviewViewport() {
           <div className="relative" ref={channelDropdownRef}>
             <button
               onClick={() => setChannelDropdownOpen(!channelDropdownOpen)}
-              className={`w-10 text-center py-0.5 text-xs rounded transition-colors ${
-                channelMode !== 'rgba'
-                  ? 'text-editor-text'
-                  : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light'
-              }`}
+              className="w-10 text-center py-0.5 text-xs rounded transition-colors text-editor-text hover:bg-editor-surface-light"
               title="Channel view"
             >
               {channelMode.toUpperCase()}
