@@ -1196,7 +1196,7 @@ export function PreviewViewport() {
             onClick={() => setToolbarPinned(!toolbarPinned)}
             className={`p-1 rounded transition-colors ${
               toolbarPinned
-                ? 'text-sky-300'
+                ? 'text-editor-text'
                 : 'text-editor-text-dim hover:text-editor-text'
             }`}
             title={toolbarPinned ? 'Unpin toolbar' : 'Pin toolbar'}
