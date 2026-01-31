@@ -1253,7 +1253,13 @@ export function PreviewViewport() {
                         : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
                     }`}
                   >
-                    <div className="w-3 h-3 border" style={{ borderColor: color ?? PREVIEW_SLOT_COLORS[colorIndex ?? 0] }} />
+                    <div
+                      className="w-3 h-3 border"
+                      style={{
+                        borderColor: color ?? PREVIEW_SLOT_COLORS[colorIndex ?? 0],
+                        opacity: borderModes.has(id) ? 1 : 0.4
+                      }}
+                    />
                     <span className="flex-1 text-left">{label}</span>
                     <span className="w-4 text-center text-[10px]">{borderModes.has(id) ? '✓' : ''}</span>
                   </button>
