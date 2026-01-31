@@ -91,28 +91,66 @@ const originalConsole = {
   debug: console.debug.bind(console),
 };
 
+// Flag to prevent recursive logging
+let isLogging = false;
+
 // Intercept console methods to capture logs
 console.log = (...args: unknown[]) => {
   originalConsole.log(...args);
-  useLogStore.getState().info(args.map(formatArg).join(' '));
+  if (!isLogging) {
+    isLogging = true;
+    try {
+      useLogStore.getState().info(args.map(formatArg).join(' '));
+    } finally {
+      isLogging = false;
+    }
+  }
 };
 
 console.info = (...args: unknown[]) => {
   originalConsole.info(...args);
-  useLogStore.getState().info(args.map(formatArg).join(' '));
+  if (!isLogging) {
+    isLogging = true;
+    try {
+      useLogStore.getState().info(args.map(formatArg).join(' '));
+    } finally {
+      isLogging = false;
+    }
+  }
 };
 
 console.warn = (...args: unknown[]) => {
   originalConsole.warn(...args);
-  useLogStore.getState().warn(args.map(formatArg).join(' '));
+  if (!isLogging) {
+    isLogging = true;
+    try {
+      useLogStore.getState().warn(args.map(formatArg).join(' '));
+    } finally {
+      isLogging = false;
+    }
+  }
 };
 
 console.error = (...args: unknown[]) => {
   originalConsole.error(...args);
-  useLogStore.getState().error(args.map(formatArg).join(' '));
+  if (!isLogging) {
+    isLogging = true;
+    try {
+      useLogStore.getState().error(args.map(formatArg).join(' '));
+    } finally {
+      isLogging = false;
+    }
+  }
 };
 
 console.debug = (...args: unknown[]) => {
   originalConsole.debug(...args);
-  useLogStore.getState().debug(args.map(formatArg).join(' '));
+  if (!isLogging) {
+    isLogging = true;
+    try {
+      useLogStore.getState().debug(args.map(formatArg).join(' '));
+    } finally {
+      isLogging = false;
+    }
+  }
 };
