@@ -256,6 +256,8 @@ export function TopToolbar() {
 
     try {
       showToast('info', 'Executing graph...', 2000);
+      // Update engine with latest graph before executing
+      executionStore.updateEngineGraph(graph);
       await executeGraph();
       showToast('success', 'Execution complete!', 2000);
     } catch (error) {
