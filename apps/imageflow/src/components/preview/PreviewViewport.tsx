@@ -1187,8 +1187,8 @@ export function PreviewViewport() {
           style={{ imageRendering: zoom > 4 ? 'pixelated' : 'auto' }}
         />
 
-        {/* HUD text overlay */}
-        {hudModes.size > 0 && (
+        {/* HUD text overlay (only show if viewport, image, or transform modes are active - not just borders) */}
+        {(hudModes.has('viewport') || hudModes.has('image') || hudModes.has('transform')) && (
           <div className="absolute top-2 left-2 bg-black/80 text-green-400 text-[10px] px-3 py-2 rounded font-mono pointer-events-none space-y-0.5 max-w-[350px]">
             {hudModes.has('viewport') && (
               <>
