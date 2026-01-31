@@ -645,12 +645,13 @@ export function PreviewViewport() {
       ctx.restore();
     };
 
-    // Draw a border around image data in the given slot color
+    // Draw a border around image data in the given slot color (half transparent)
     const drawImageBorder = (imageData: ImageData, transform: Transform2D | undefined, slotColor: string) => {
       const centerOffsetX = -imageData.width / 2;
       const centerOffsetY = -imageData.height / 2;
 
       ctx.save();
+      ctx.globalAlpha = 0.5;
       ctx.strokeStyle = slotColor;
       ctx.lineWidth = 2 / zoom;
 

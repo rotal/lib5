@@ -340,10 +340,10 @@ export class GraphEngine {
               value = coercePortValue(value, sourceType, targetType, coerceWidth, coerceHeight);
             }
 
-            // Bake transforms when passing images to downstream nodes
-            // This ensures execution output matches preview (which uses canvas transforms)
-            // The default color is used for pixels outside source bounds when resampling
-            if (isFloatImage(value) && value.transform) {
+            // Only bake transforms when passing to nodes that require spatial coherence
+            // (e.g., blur, convolution). Non-spatial nodes can work with the transform matrix.
+            // This allows Transform → Transform to just compose matrices without resampling.
+            if (isFloatImage(value) && value.transform && definition.requiresSpatialCoherence) {
               const defaultColor: Color = this.graph.canvas?.defaultColor ?? { r: 0, g: 0, b: 0, a: 0 };
               value = applyTransformToImage(value, defaultColor);
             }

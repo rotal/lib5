@@ -4,41 +4,94 @@ import { NodeRegistry } from '../../core/graph/NodeRegistry';
 import { GraphPort } from './GraphPort';
 import { Edge } from '../../types/graph';
 import { useUiStore, useExecutionStore, useGraphStore } from '../../store';
-import { isFloatImage, floatToImageData, isGPUTexture } from '../../types/data';
+import { isFloatImage, floatToImageData, isGPUTexture, isIdentityTransform } from '../../types/data';
+import type { FloatImage } from '../../types/data';
 import type { GPUTexture } from '../../types/gpu';
 
 const PREVIEW_SLOT_COLORS = ['#ef4444', '#22c55e', '#3b82f6']; // Red, Green, Blue for slots 1, 2, 3
 
-// Cache for ImageData -> data URL conversion to avoid repeated allocations
-const dataUrlCache = new WeakMap<ImageData, string>();
 // Reusable canvas for data URL generation
 let sharedTempCanvas: HTMLCanvasElement | null = null;
+const PREVIEW_SIZE = 180; // Max preview dimension
 
-function imageDataToDataUrl(imageData: ImageData): string {
-  // Check cache first
-  const cached = dataUrlCache.get(imageData);
-  if (cached) return cached;
-
+/**
+ * Render a FloatImage as canvas view (with transform applied, fit to preview size with canvas aspect ratio)
+ */
+function floatImageToCanvasDataUrl(
+  floatImage: FloatImage,
+  canvasWidth: number,
+  canvasHeight: number
+): string {
   // Get or create shared canvas
   if (!sharedTempCanvas) {
     sharedTempCanvas = document.createElement('canvas');
   }
 
-  // Resize only if needed
-  if (sharedTempCanvas.width !== imageData.width || sharedTempCanvas.height !== imageData.height) {
-    sharedTempCanvas.width = imageData.width;
-    sharedTempCanvas.height = imageData.height;
+  // Calculate preview dimensions maintaining canvas aspect ratio
+  const canvasAspect = canvasWidth / canvasHeight;
+  let previewW: number, previewH: number;
+  if (canvasAspect >= 1) {
+    // Wider than tall
+    previewW = PREVIEW_SIZE;
+    previewH = Math.round(PREVIEW_SIZE / canvasAspect);
+  } else {
+    // Taller than wide
+    previewH = PREVIEW_SIZE;
+    previewW = Math.round(PREVIEW_SIZE * canvasAspect);
+  }
+
+  // Scale factor from canvas to preview
+  const scale = previewW / canvasWidth;
+
+  if (sharedTempCanvas.width !== previewW || sharedTempCanvas.height !== previewH) {
+    sharedTempCanvas.width = previewW;
+    sharedTempCanvas.height = previewH;
   }
 
   const ctx = sharedTempCanvas.getContext('2d');
   if (!ctx) return '';
 
-  ctx.putImageData(imageData, 0, 0);
-  const dataUrl = sharedTempCanvas.toDataURL('image/png');
+  // Clear with dark background
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, previewW, previewH);
 
-  // Cache for future calls
-  dataUrlCache.set(imageData, dataUrl);
-  return dataUrl;
+  // Convert FloatImage to ImageData for drawing
+  const imageData = floatToImageData(floatImage);
+
+  // Create a temporary canvas to hold the image data
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = imageData.width;
+  tempCanvas.height = imageData.height;
+  const tempCtx = tempCanvas.getContext('2d');
+  if (!tempCtx) return '';
+  tempCtx.putImageData(imageData, 0, 0);
+
+  // Draw with transform applied (same logic as PreviewViewport, scaled to preview size)
+  ctx.save();
+
+  // Scale everything to fit preview
+  ctx.scale(scale, scale);
+
+  // Move origin to canvas center (in canvas coords)
+  ctx.translate(canvasWidth / 2, canvasHeight / 2);
+
+  const transform = floatImage.transform;
+  const centerOffsetX = -imageData.width / 2;
+  const centerOffsetY = -imageData.height / 2;
+
+  if (transform && !isIdentityTransform(transform)) {
+    // Apply centering offset first, then transform
+    ctx.translate(centerOffsetX, centerOffsetY);
+    ctx.transform(transform.a, transform.c, transform.b, transform.d, transform.tx, transform.ty);
+    ctx.drawImage(tempCanvas, 0, 0);
+  } else {
+    // No transform - just draw centered
+    ctx.drawImage(tempCanvas, centerOffsetX, centerOffsetY);
+  }
+
+  ctx.restore();
+
+  return sharedTempCanvas.toDataURL('image/png');
 }
 
 interface GraphNodeProps {
@@ -143,22 +196,19 @@ export function GraphNode({
     return connected;
   }, [edges, node.id]);
 
-  // Get preview image data from node outputs
-  const previewImageData = useMemo((): ImageData | null => {
+  // Get preview FloatImage from node outputs (keeping transform for canvas view rendering)
+  const previewFloatImage = useMemo((): FloatImage | null => {
     if (!localPreview || !nodeOutputs) return null;
 
     for (const value of Object.values(nodeOutputs)) {
-      if (value instanceof ImageData) {
-        return value;
-      }
       if (isFloatImage(value)) {
-        return floatToImageData(value);
+        return value;
       }
       // Download GPU textures for preview
       if (isGPUTexture(value)) {
         const floatImage = downloadGPUTexture(value as GPUTexture);
         if (floatImage) {
-          return floatToImageData(floatImage);
+          return floatImage;
         }
       }
     }
@@ -167,7 +217,7 @@ export function GraphNode({
 
   // Get preview scalar data for non-image outputs (e.g. Math node)
   const previewScalarData = useMemo((): { name: string; value: string }[] | null => {
-    if (!localPreview || !nodeOutputs || previewImageData || !definition) return null;
+    if (!localPreview || !nodeOutputs || previewFloatImage || !definition) return null;
 
     const entries: { name: string; value: string }[] = [];
     for (const output of definition.outputs) {
@@ -187,23 +237,24 @@ export function GraphNode({
     }
 
     return entries.length > 0 ? entries : null;
-  }, [localPreview, nodeOutputs, previewImageData, definition]);
+  }, [localPreview, nodeOutputs, previewFloatImage, definition]);
 
-  // Generate preview data URL (uses cached conversion to avoid memory leak)
+  // Generate preview data URL - renders as canvas view with transform applied
   useEffect(() => {
     if (!localPreview) {
       setPreviewDataUrl(null);
       return;
     }
 
-    if (!previewImageData) {
+    if (!previewFloatImage) {
       setPreviewDataUrl(null);
       return;
     }
 
-    // Use cached data URL generation
-    setPreviewDataUrl(imageDataToDataUrl(previewImageData));
-  }, [localPreview, previewImageData]);
+    const canvasW = graph.canvas?.width ?? 1920;
+    const canvasH = graph.canvas?.height ?? 1080;
+    setPreviewDataUrl(floatImageToCanvasDataUrl(previewFloatImage, canvasW, canvasH));
+  }, [localPreview, previewFloatImage, graph.canvas?.width, graph.canvas?.height]);
 
   const handleTogglePreview = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
