@@ -1084,7 +1084,7 @@ export function PreviewViewport() {
               {channelMode.toUpperCase()}
             </button>
             {channelDropdownOpen && (
-              <div className="absolute top-full left-0 mt-2 bg-editor-surface/40 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[70px] py-1">
+              <div className="absolute top-full left-0 mt-2 bg-editor-surface/70 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[70px] py-1">
                 {(['rgba', 'r', 'g', 'b', 'a'] as const).map((ch) => (
                   <button
                     key={ch}
@@ -1119,7 +1119,7 @@ export function PreviewViewport() {
               <span className="font-medium">HUD</span>
             </button>
             {hudDropdownOpen && (
-              <div className="absolute top-full left-0 mt-2 bg-editor-surface/40 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[140px] overflow-hidden py-1">
+              <div className="absolute top-full left-0 mt-2 bg-editor-surface/70 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[140px] overflow-hidden py-1">
                 {([
                   { id: 'viewport', icon: '⊞', label: 'Viewport' },
                   { id: 'image', icon: '◫', label: 'Image' },
