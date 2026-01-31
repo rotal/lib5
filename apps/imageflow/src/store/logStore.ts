@@ -72,11 +72,18 @@ export const appLog = {
 const formatArgs = (args: unknown[]) => args.map(a => typeof a === 'string' ? a : String(a)).join(' ');
 
 const _origLog = console.log.bind(console);
+const _origInfo = console.info.bind(console);
 const _origWarn = console.warn.bind(console);
 const _origError = console.error.bind(console);
+const _origDebug = console.debug.bind(console);
 
 console.log = (...args: unknown[]) => {
   _origLog(...args);
+  useLogStore.getState().info(formatArgs(args));
+};
+
+console.info = (...args: unknown[]) => {
+  _origInfo(...args);
   useLogStore.getState().info(formatArgs(args));
 };
 
@@ -88,5 +95,10 @@ console.warn = (...args: unknown[]) => {
 console.error = (...args: unknown[]) => {
   _origError(...args);
   useLogStore.getState().error(formatArgs(args));
+};
+
+console.debug = (...args: unknown[]) => {
+  _origDebug(...args);
+  useLogStore.getState().debug(formatArgs(args));
 };
 
