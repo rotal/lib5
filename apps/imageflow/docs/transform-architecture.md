@@ -73,7 +73,6 @@ return {
     width: inputImage.width,
     height: inputImage.height,
     transform: combinedTransform, // New composed transform
-    offset: inputImage.offset,
   },
 };
 ```
@@ -92,23 +91,89 @@ Nodes that need baked pixel data declare this in their definition (`types/node.t
 
 ### applyTransformToImage (Baking Function)
 
-Located at `types/data.ts:301`, this function:
+Located at `types/data.ts:299`, this function:
 
 1. Calculates the transformed bounding box (AABB) from all four corners
 2. Allocates a new image sized to fit the transformed content
 3. Uses bilinear interpolation to resample pixels via inverse transform mapping
-4. Updates the `offset` to reflect the new position in canvas space
-5. Returns an image with **no transform property** (identity implied)
+4. Assigns a pure translation transform to maintain position in canvas space
+5. Returns an image with the baked pixels and position-preserving transform
 
-## Nodes Requiring Spatial Coherence
+## Node Baking Requirements
 
-These nodes have `requiresSpatialCoherence: true` and trigger automatic baking:
+### Nodes that REQUIRE Baking (`requiresSpatialCoherence: true`)
 
-| Node | File | Reason |
-|------|------|--------|
-| BlurNode | `core/nodes/filter/BlurNode.ts:264` | Kernel samples neighboring pixels |
-| ConvolutionNode | `core/nodes/filter/ConvolutionNode.ts:200` | Kernel samples neighboring pixels |
-| SharpenNode | `core/nodes/filter/SharpenNode.ts:10` | Uses blur internally |
+These nodes need pixel data in spatially correct arrangement (for kernel/neighbor sampling):
+
+| Node | Type | File | Reason |
+|------|------|------|--------|
+| BlurNode | `filter/blur` | `core/nodes/filter/BlurNode.ts` | Kernel samples neighboring pixels |
+| ConvolutionNode | `filter/convolution` | `core/nodes/filter/ConvolutionNode.ts` | Kernel samples neighboring pixels |
+| SharpenNode | `filter/sharpen` | `core/nodes/filter/SharpenNode.ts` | Uses convolution internally |
+
+### Nodes that DO NOT Require Baking
+
+These nodes can work with transforms passed through (no pixel resampling needed):
+
+#### Input Nodes (generate new images, no input transform)
+| Node | Type |
+|------|------|
+| ImageInputNode | `input/image` |
+| ColorInputNode | `input/color` |
+| NoiseNode | `input/noise` |
+| RampNode | `input/ramp` |
+
+#### Transform Nodes (compose matrices only)
+| Node | Type |
+|------|------|
+| TransformNode | `transform/transform` |
+
+#### Adjust Nodes (per-pixel operations, preserve transform)
+| Node | Type |
+|------|------|
+| LevelsNode | `adjust/levels` |
+| InvertNode | `adjust/invert` |
+| BrightnessContrastNode | `adjust/brightness-contrast` |
+| HueSaturationNode | `adjust/hue-saturation` |
+
+#### Composite Nodes (blend/merge operations)
+| Node | Type |
+|------|------|
+| BlendNode | `composite/blend` |
+| MergeNode | `composite/merge` |
+
+#### Mask Nodes (per-pixel mask operations)
+| Node | Type |
+|------|------|
+| ApplyMaskNode | `mask/apply` |
+| ThresholdNode | `mask/threshold` |
+| MaskOperationsNode | `mask/operations` |
+
+#### Utility Nodes (channel/math operations)
+| Node | Type |
+|------|------|
+| MathNode | `utility/math` |
+| SplitChannelsNode | `utility/split-channels` |
+| MergeChannelsNode | `utility/merge-channels` |
+| ReorderChannelsNode | `utility/reorder-channels` |
+
+#### Custom/GPU Nodes (per-pixel shaders)
+| Node | Type |
+|------|------|
+| SepiaNode | `custom/sepia` |
+| VignetteNode | `custom/vignette` |
+
+#### AI Nodes (external processing)
+| Node | Type |
+|------|------|
+| AICustomNode | `ai/custom` |
+| AIEnhanceNode | `ai/enhance` |
+| AIRemoveBackgroundNode | `ai/remove-background` |
+
+#### Output Nodes
+| Node | Type |
+|------|------|
+| ExportNode | `output/export` |
 
 ## Data Flow
 
@@ -133,22 +198,27 @@ ImageInput → TransformNode → BlurNode → Output
               1. applyTransformToImage() called
               2. Pixels resampled with bilinear interpolation
               3. Output sized to transformed AABB
-              4. offset updated, transform = identity
+              4. Translation transform assigned to preserve position
 ```
 
 ### GraphEngine Baking Logic
 
-The baking decision happens in `GraphEngine.executeNode()` at line ~346:
+The baking decision happens in `GraphEngine.executeNode()` at line ~343:
 
 ```typescript
-// Bake transforms when passing images to downstream nodes
-if (isFloatImage(value) && value.transform) {
-  const canvasWidth = this.graph.canvas?.width ?? 1920;
-  const canvasHeight = this.graph.canvas?.height ?? 1080;
-  const defaultColor = this.graph.canvas?.defaultColor ?? { r: 0, g: 0, b: 0, a: 0 };
-  value = applyTransformToImage(value, canvasWidth, canvasHeight, defaultColor);
+// Only bake transforms when passing to nodes that require spatial coherence
+// (e.g., blur, convolution). Non-spatial nodes can work with the transform matrix.
+// This allows Transform → Transform to just compose matrices without resampling.
+if (isFloatImage(value) && value.transform && definition.requiresSpatialCoherence) {
+  const defaultColor: Color = this.graph.canvas?.defaultColor ?? { r: 0, g: 0, b: 0, a: 0 };
+  value = applyTransformToImage(value, defaultColor);
 }
 ```
+
+**Key behavior:**
+- Transform → Transform: Matrices compose, no baking
+- Transform → Blur: Baking triggered (spatial coherence required)
+- Transform → Blend: No baking (per-pixel operation)
 
 ## Transform-Based Positioning
 
