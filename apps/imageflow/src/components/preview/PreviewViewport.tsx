@@ -37,7 +37,7 @@ export function PreviewViewport() {
   const [isNearSplitter, setIsNearSplitter] = useState(false);
   const [channelMode, setChannelMode] = useState<'rgba' | 'r' | 'g' | 'b' | 'a'>('rgba');
   const [previewBgMode, setPreviewBgMode] = useState<'check' | 'grid' | 'black'>('check');
-  const [debugModes, setDebugModes] = useState<Set<'viewport' | 'image' | 'transform'>>(new Set());
+  const [debugModes, setDebugModes] = useState<Set<'viewport' | 'image' | 'transform' | 'borders'>>(new Set());
   const [debugDropdownOpen, setDebugDropdownOpen] = useState(false);
   const debugDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -694,7 +694,9 @@ export function PreviewViewport() {
     if (showComparison) {
       // Draw background
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
+      if (debugModes.has('borders')) {
+        drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
+      }
 
       // Draw foreground with clip
       ctx.save();
@@ -716,7 +718,9 @@ export function PreviewViewport() {
       }
       ctx.clip();
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
-      drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
+      if (debugModes.has('borders')) {
+        drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
+      }
       ctx.restore();
 
       // Draw split line
@@ -735,10 +739,14 @@ export function PreviewViewport() {
       ctx.stroke();
     } else if (hasBackground) {
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
+      if (debugModes.has('borders')) {
+        drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
+      }
     } else if (hasForeground) {
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
-      drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
+      if (debugModes.has('borders')) {
+        drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
+      }
     }
 
     // Draw canvas border to indicate project resolution bounds
@@ -749,7 +757,7 @@ export function PreviewViewport() {
     ctx.restore();
 
     setImageInfo({ width: canvasSettings.width, height: canvasSettings.height });
-  }, [nodeOutputs, backgroundNodeId, foregroundNodeId, previewSplitPosition, previewSplitVertical, previewSplitReversed, previewForegroundSlot, downloadGPUTexture, channelMode, canvasSettings, containerSize, zoom, pan, foregroundTransform, backgroundTransform, dragTransform, gizmoNode]);
+  }, [nodeOutputs, backgroundNodeId, foregroundNodeId, previewSplitPosition, previewSplitVertical, previewSplitReversed, previewForegroundSlot, downloadGPUTexture, channelMode, canvasSettings, containerSize, zoom, pan, foregroundTransform, backgroundTransform, dragTransform, gizmoNode, debugModes]);
 
   // Auto-fit on first load or when canvas size changes
   useEffect(() => {
@@ -1075,7 +1083,7 @@ export function PreviewViewport() {
             </button>
             {debugDropdownOpen && (
               <div className="absolute top-full left-0 mt-1 bg-editor-surface-solid border border-editor-border rounded shadow-lg z-50 min-w-[100px]">
-                {(['viewport', 'image', 'transform'] as const).map((mode) => (
+                {(['viewport', 'image', 'transform', 'borders'] as const).map((mode) => (
                   <label
                     key={mode}
                     className="flex items-center gap-2 px-2 py-1 hover:bg-editor-surface-light cursor-pointer text-xs"
