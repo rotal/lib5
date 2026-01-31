@@ -68,20 +68,11 @@ export const appLog = {
   clear: () => useLogStore.getState().clear(),
 };
 
-// Step 3: console.log with JSON for objects
-function formatArg(a: unknown): string {
-  if (typeof a === 'string') return a;
-  if (a === null) return 'null';
-  if (a === undefined) return 'undefined';
-  if (typeof a === 'object') {
-    try { return JSON.stringify(a); } catch { return String(a); }
-  }
-  return String(a);
-}
-
+// Step 2: console.log, all args as strings (no JSON - it crashes)
 const _origLog = console.log.bind(console);
 console.log = (...args: unknown[]) => {
   _origLog(...args);
-  useLogStore.getState().info(args.map(formatArg).join(' '));
+  const msg = args.map(a => typeof a === 'string' ? a : String(a)).join(' ');
+  useLogStore.getState().info(msg);
 };
 
