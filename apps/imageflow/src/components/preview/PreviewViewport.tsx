@@ -977,7 +977,7 @@ export function PreviewViewport() {
       onKeyDown={handleKeyDown}
     >
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-editor-border bg-editor-surface">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-editor-text">Preview</span>
           {/* Preview slot buttons */}
@@ -1388,7 +1388,7 @@ export function PreviewViewport() {
       </div>
 
       {/* Status bar */}
-      <div className="px-3 py-1 border-t border-editor-border bg-editor-surface text-xs text-editor-text-dim flex justify-between">
+      <div className="px-3 py-1 border-t border-white/10 bg-editor-surface/40 backdrop-blur-xl text-xs text-editor-text-dim flex justify-between">
         <span>
           {imageInfo ? `${imageInfo.width} × ${imageInfo.height}` : 'No image'}
           {' | '}
