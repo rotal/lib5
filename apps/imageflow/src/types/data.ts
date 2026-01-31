@@ -166,6 +166,19 @@ export function transformPoint(t: Transform2D, x: number, y: number): { x: numbe
   };
 }
 
+/** Check if a Transform2D is identity (no transformation) */
+export function isIdentityTransform(t: Transform2D): boolean {
+  const eps = 1e-6;
+  return (
+    Math.abs(t.a - 1) < eps &&
+    Math.abs(t.b) < eps &&
+    Math.abs(t.c) < eps &&
+    Math.abs(t.d - 1) < eps &&
+    Math.abs(t.tx) < eps &&
+    Math.abs(t.ty) < eps
+  );
+}
+
 /**
  * Float image data with 32-bit float channels (0.0-1.0 range)
  * Supports HDR and high precision color processing
@@ -257,6 +270,68 @@ export function cloneFloatImage(source: FloatImage): FloatImage {
     height: source.height,
     origin: source.origin ? { ...source.origin } : undefined,
   };
+}
+
+/**
+ * Apply/bake the transform into a FloatImage by resampling pixels.
+ * Returns a new FloatImage with identity transform.
+ * Uses bilinear interpolation for smooth results.
+ */
+export function applyTransformToImage(image: FloatImage): FloatImage {
+  const transform = image.transform;
+  if (!transform || isIdentityTransform(transform)) {
+    // No transform or identity - just clone without transform property
+    return {
+      data: new Float32Array(image.data),
+      width: image.width,
+      height: image.height,
+    };
+  }
+
+  const { width, height, data: src } = image;
+  const dst = new Float32Array(width * height * 4);
+
+  // Inverse transform maps output coords to input coords
+  const inv = invertTransform(transform);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // Map output (x, y) to source coordinates
+      const srcX = inv.a * x + inv.b * y + inv.tx;
+      const srcY = inv.c * x + inv.d * y + inv.ty;
+
+      // Bilinear interpolation
+      const x0 = Math.floor(srcX);
+      const y0 = Math.floor(srcY);
+      const x1 = x0 + 1;
+      const y1 = y0 + 1;
+      const fx = srcX - x0;
+      const fy = srcY - y0;
+
+      // Get pixel values (with boundary check)
+      const getPixel = (px: number, py: number, channel: number): number => {
+        if (px < 0 || px >= width || py < 0 || py >= height) {
+          return 0; // Transparent black outside bounds
+        }
+        return src[(py * width + px) * 4 + channel];
+      };
+
+      const dstIdx = (y * width + x) * 4;
+      for (let c = 0; c < 4; c++) {
+        const v00 = getPixel(x0, y0, c);
+        const v10 = getPixel(x1, y0, c);
+        const v01 = getPixel(x0, y1, c);
+        const v11 = getPixel(x1, y1, c);
+
+        // Bilinear blend
+        const v0 = v00 * (1 - fx) + v10 * fx;
+        const v1 = v01 * (1 - fx) + v11 * fx;
+        dst[dstIdx + c] = v0 * (1 - fy) + v1 * fy;
+      }
+    }
+  }
+
+  return { data: dst, width, height };
 }
 
 export interface Selection {

@@ -1,6 +1,6 @@
 import { Graph, GraphExecutionState } from '../../types/graph';
 import { NodeRuntimeState, ExecutionContext } from '../../types/node';
-import { PortValue, DataType, isGPUTexture, isFloatImage, coercePortValue, isIdentityLocalTransform, createPivotTransform, multiplyTransform, IDENTITY_TRANSFORM, FloatImage, imageDataToFloat } from '../../types/data';
+import { PortValue, DataType, isGPUTexture, isFloatImage, coercePortValue, isIdentityLocalTransform, createPivotTransform, multiplyTransform, IDENTITY_TRANSFORM, FloatImage, imageDataToFloat, isIdentityTransform, applyTransformToImage } from '../../types/data';
 import { GPUContext } from '../../types/gpu';
 import { NodeRegistry } from './NodeRegistry';
 import { topologicalSort, getPartialExecutionOrder } from './TopologicalSort';
@@ -297,6 +297,12 @@ export class GraphEngine {
                 }
               }
               value = coercePortValue(value, sourceType, targetType, coerceWidth, coerceHeight);
+            }
+
+            // Apply/bake transform if the input is a FloatImage with a non-identity transform
+            // This ensures downstream nodes receive properly transformed pixel data
+            if (isFloatImage(value) && value.transform && !isIdentityTransform(value.transform)) {
+              value = applyTransformToImage(value);
             }
 
             inputs[inputDef.id] = value;
