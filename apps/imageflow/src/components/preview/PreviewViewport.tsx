@@ -1094,7 +1094,7 @@ export function PreviewViewport() {
                     }}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-all duration-100 ${
                       channelMode === ch
-                        ? 'bg-sky-500/15 text-sky-300'
+                        ? 'text-editor-text'
                         : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
                     }`}
                   >
@@ -1139,7 +1139,7 @@ export function PreviewViewport() {
                     }}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-all duration-100 ${
                       hudModes.has(id)
-                        ? 'bg-sky-500/15 text-sky-300'
+                        ? 'text-editor-text'
                         : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
                     }`}
                   >
