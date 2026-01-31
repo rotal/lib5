@@ -1175,18 +1175,13 @@ export function PreviewViewport() {
             </div>
           </button>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleActualSize}
-            className="px-2 py-1 text-xs text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light rounded transition-colors"
-            title="Reset to 100%"
-          >
-            100%
-          </button>
-          <span className="text-xs text-editor-text-dim">
-            {Math.round(zoom * 100)}%
-          </span>
-        </div>
+        <button
+          onClick={handleActualSize}
+          className="px-2 py-0.5 text-xs text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light rounded transition-colors"
+          title="Click for 1:1 actual size"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
       </div>
 
       {/* Canvas container */}
