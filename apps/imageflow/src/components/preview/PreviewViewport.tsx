@@ -979,7 +979,7 @@ export function PreviewViewport() {
       onKeyDown={handleKeyDown}
     >
       {/* Hover zone to show toolbar when hidden */}
-      {!toolbarPinned && (
+      {!toolbarPinned && !toolbarHovered && (
         <div
           className="absolute top-0 left-0 right-0 h-6 z-20"
           onMouseEnter={() => setToolbarHovered(true)}
@@ -987,7 +987,7 @@ export function PreviewViewport() {
       )}
       {/* Toolbar */}
       <div
-        className={`absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl overflow-visible z-10 transition-all duration-200 ${
+        className={`absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl overflow-visible z-20 transition-all duration-200 ${
           !toolbarPinned && !toolbarHovered ? '-translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
         }`}
         onMouseEnter={() => setToolbarHovered(true)}
