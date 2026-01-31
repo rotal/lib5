@@ -274,7 +274,7 @@ export function cloneFloatImage(source: FloatImage): FloatImage {
 
 /**
  * Apply/bake the transform into a FloatImage by resampling pixels.
- * Returns a new FloatImage with identity transform.
+ * Expands the canvas to fit transformed content plus padding for reverse transforms.
  * Uses bilinear interpolation for smooth results.
  */
 export function applyTransformToImage(image: FloatImage): FloatImage {
@@ -288,50 +288,101 @@ export function applyTransformToImage(image: FloatImage): FloatImage {
     };
   }
 
-  const { width, height, data: src } = image;
-  const dst = new Float32Array(width * height * 4);
+  const { width: srcW, height: srcH, data: src } = image;
+
+  // Transform all 4 corners to find bounding box of transformed content
+  const corners = [
+    transformPoint(transform, 0, 0),
+    transformPoint(transform, srcW, 0),
+    transformPoint(transform, srcW, srcH),
+    transformPoint(transform, 0, srcH),
+  ];
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const c of corners) {
+    minX = Math.min(minX, c.x);
+    minY = Math.min(minY, c.y);
+    maxX = Math.max(maxX, c.x);
+    maxY = Math.max(maxY, c.y);
+  }
+
+  // Calculate how much the content moved from original bounds
+  const deltaLeft = Math.max(0, -minX);
+  const deltaTop = Math.max(0, -minY);
+  const deltaRight = Math.max(0, maxX - srcW);
+  const deltaBottom = Math.max(0, maxY - srcH);
+
+  // Expand canvas symmetrically to allow reverse transforms
+  // Use the max displacement as padding on all sides
+  const maxDelta = Math.max(deltaLeft, deltaTop, deltaRight, deltaBottom);
+  const padding = Math.ceil(maxDelta);
+
+  // New canvas dimensions with symmetric padding
+  const dstW = srcW + padding * 2;
+  const dstH = srcH + padding * 2;
+
+  // Sanity check for extremely large transforms
+  if (dstW <= 0 || dstH <= 0 || dstW > 16384 || dstH > 16384) {
+    return {
+      data: new Float32Array(image.data),
+      width: image.width,
+      height: image.height,
+    };
+  }
+
+  const dst = new Float32Array(dstW * dstH * 4);
 
   // Inverse transform maps output coords to input coords
   const inv = invertTransform(transform);
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      // Map output (x, y) to source coordinates
-      const srcX = inv.a * x + inv.b * y + inv.tx;
-      const srcY = inv.c * x + inv.d * y + inv.ty;
+  // Get pixel from source with bilinear interpolation
+  const sampleSource = (sx: number, sy: number, channel: number): number => {
+    if (sx < 0 || sx >= srcW || sy < 0 || sy >= srcH) {
+      return 0; // Transparent black outside source bounds
+    }
+    const x0 = Math.floor(sx);
+    const y0 = Math.floor(sy);
+    const x1 = Math.min(x0 + 1, srcW - 1);
+    const y1 = Math.min(y0 + 1, srcH - 1);
+    const fx = sx - x0;
+    const fy = sy - y0;
 
-      // Bilinear interpolation
-      const x0 = Math.floor(srcX);
-      const y0 = Math.floor(srcY);
-      const x1 = x0 + 1;
-      const y1 = y0 + 1;
-      const fx = srcX - x0;
-      const fy = srcY - y0;
+    const v00 = src[(y0 * srcW + x0) * 4 + channel];
+    const v10 = src[(y0 * srcW + x1) * 4 + channel];
+    const v01 = src[(y1 * srcW + x0) * 4 + channel];
+    const v11 = src[(y1 * srcW + x1) * 4 + channel];
 
-      // Get pixel values (with boundary check)
-      const getPixel = (px: number, py: number, channel: number): number => {
-        if (px < 0 || px >= width || py < 0 || py >= height) {
-          return 0; // Transparent black outside bounds
-        }
-        return src[(py * width + px) * 4 + channel];
-      };
+    const v0 = v00 * (1 - fx) + v10 * fx;
+    const v1 = v01 * (1 - fx) + v11 * fx;
+    return v0 * (1 - fy) + v1 * fy;
+  };
 
-      const dstIdx = (y * width + x) * 4;
+  // Fill destination buffer
+  // Output coords are offset by -padding to align with original image space
+  for (let y = 0; y < dstH; y++) {
+    for (let x = 0; x < dstW; x++) {
+      // Map output pixel to original image coordinate space
+      const origX = x - padding;
+      const origY = y - padding;
+
+      // Apply inverse transform to get source coordinates
+      const srcX = inv.a * origX + inv.b * origY + inv.tx;
+      const srcY = inv.c * origX + inv.d * origY + inv.ty;
+
+      const dstIdx = (y * dstW + x) * 4;
       for (let c = 0; c < 4; c++) {
-        const v00 = getPixel(x0, y0, c);
-        const v10 = getPixel(x1, y0, c);
-        const v01 = getPixel(x0, y1, c);
-        const v11 = getPixel(x1, y1, c);
-
-        // Bilinear blend
-        const v0 = v00 * (1 - fx) + v10 * fx;
-        const v1 = v01 * (1 - fx) + v11 * fx;
-        dst[dstIdx + c] = v0 * (1 - fy) + v1 * fy;
+        dst[dstIdx + c] = sampleSource(srcX, srcY, c);
       }
     }
   }
 
-  return { data: dst, width, height };
+  // Return expanded image without transform
+  // Content is now baked with padding, downstream transforms work on this larger canvas
+  return {
+    data: dst,
+    width: dstW,
+    height: dstH,
+  };
 }
 
 export interface Selection {
