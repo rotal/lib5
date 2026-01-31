@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useCodeStore } from '../../store/codeStore';
+import { useUiStore } from '../../store/uiStore';
 
 const FolderIcon = () => (
   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -30,6 +31,7 @@ export function SettingsView() {
     setBypassPermissions,
   } = useCodeStore();
 
+  const { canvasBorderColor, setCanvasBorderColor } = useUiStore();
   const [inputPath, setInputPath] = useState(projectPath || '');
 
   const handleSavePath = () => {
@@ -125,6 +127,31 @@ export function SettingsView() {
                   </p>
                 </div>
               )}
+            </div>
+
+            {/* Canvas Border Color */}
+            <div className="pt-2 border-t border-editor-border">
+              <label className="block text-sm font-medium text-editor-text mb-2">
+                Canvas Border Color
+              </label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={canvasBorderColor}
+                  onChange={(e) => setCanvasBorderColor(e.target.value)}
+                  className="w-12 h-10 rounded-lg cursor-pointer border border-editor-border"
+                />
+                <input
+                  type="text"
+                  value={canvasBorderColor}
+                  onChange={(e) => setCanvasBorderColor(e.target.value)}
+                  placeholder="#ff00ff"
+                  className="flex-1 h-10 px-3 bg-editor-surface border border-editor-border rounded-lg text-editor-text text-xs placeholder-editor-text-dim focus:outline-none focus:border-editor-accent"
+                />
+              </div>
+              <p className="mt-2 text-xs text-editor-text-dim">
+                Color used for the canvas bounds border in preview
+              </p>
             </div>
 
             {/* Recent Paths */}

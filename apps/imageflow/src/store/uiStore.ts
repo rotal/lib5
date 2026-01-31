@@ -30,6 +30,7 @@ interface UiState {
   previewSplitPosition: number; // 0-1, how much foreground is shown
   previewSplitVertical: boolean; // true = vertical split, false = horizontal
   previewSplitReversed: boolean; // true = swap foreground/background sides
+  canvasBorderColor: string; // Hex color for canvas border in preview
   contextMenu: {
     x: number;
     y: number;
@@ -72,6 +73,7 @@ interface UiActions {
   setPreviewSplitPosition: (position: number) => void;
   togglePreviewSplitDirection: () => void;
   togglePreviewSplitReverse: () => void;
+  setCanvasBorderColor: (color: string) => void;
   showContextMenu: (x: number, y: number, type: 'canvas' | 'node' | 'edge' | 'port', targetId?: string) => void;
   hideContextMenu: () => void;
   showToast: (type: 'info' | 'success' | 'warning' | 'error', message: string, duration?: number) => void;
@@ -117,6 +119,7 @@ export const useUiStore = create<UiState & UiActions>((set, get) => ({
   previewSplitPosition: restoredPreview?.previewSplitPosition ?? 0.5,
   previewSplitVertical: restoredPreview?.previewSplitVertical ?? true,
   previewSplitReversed: restoredPreview?.previewSplitReversed ?? false,
+  canvasBorderColor: '#ff00ff',
   contextMenu: null,
   toasts: [],
 
@@ -285,6 +288,10 @@ export const useUiStore = create<UiState & UiActions>((set, get) => ({
 
   togglePreviewSplitReverse: () => {
     set((state) => ({ previewSplitReversed: !state.previewSplitReversed }));
+  },
+
+  setCanvasBorderColor: (color) => {
+    set({ canvasBorderColor: color });
   },
 
   showContextMenu: (x, y, type, targetId) => {

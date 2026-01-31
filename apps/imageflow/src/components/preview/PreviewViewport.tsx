@@ -22,6 +22,7 @@ export function PreviewViewport() {
     previewSplitPosition,
     previewSplitVertical,
     previewSplitReversed,
+    canvasBorderColor,
     togglePreviewBackground,
     setPreviewForeground,
     setPreviewSplitPosition,
@@ -767,7 +768,7 @@ export function PreviewViewport() {
 
     // Draw canvas border to indicate project resolution bounds
     if (hudVisible && bordersEnabled && borderModes.has('canvas')) {
-      ctx.strokeStyle = '#ffcc00';
+      ctx.strokeStyle = canvasBorderColor + '80'; // Add 80 (50% opacity) to hex color
       ctx.lineWidth = 2 / zoom;
       ctx.strokeRect(projectOffsetX, projectOffsetY, canvasSettings.width, canvasSettings.height);
     }
