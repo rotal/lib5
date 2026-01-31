@@ -175,6 +175,8 @@ export interface NodeDefinition {
   gizmo?: GizmoDefinition;
   /** If true, node has built-in local transform params (_tx, _ty, _sx, _sy, _angle, _px, _py) */
   hasLocalTransform?: boolean;
+  /** If true, node needs spatially coherent pixel data (e.g., blur, convolution). Transforms are baked before passing to such nodes. */
+  requiresSpatialCoherence?: boolean;
 }
 
 /**

@@ -262,6 +262,7 @@ export const BlurNode = defineNode({
   description: 'Apply Gaussian blur to image',
   icon: 'blur_on',
   hasLocalTransform: true,
+  requiresSpatialCoherence: true,
 
   inputs: [
     {

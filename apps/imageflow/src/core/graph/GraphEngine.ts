@@ -299,9 +299,9 @@ export class GraphEngine {
               value = coercePortValue(value, sourceType, targetType, coerceWidth, coerceHeight);
             }
 
-            // Apply/bake transform if the input is a FloatImage with a non-identity transform
-            // This ensures downstream nodes receive properly transformed pixel data
-            if (isFloatImage(value) && value.transform && !isIdentityTransform(value.transform)) {
+            // Only bake transforms for nodes that need spatially coherent pixel data (blur, convolution, etc.)
+            // Other nodes can work on raw pixels and pass transforms through for better performance
+            if (definition.requiresSpatialCoherence && isFloatImage(value) && value.transform && !isIdentityTransform(value.transform)) {
               value = applyTransformToImage(value);
             }
 

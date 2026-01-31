@@ -198,6 +198,7 @@ export const ConvolutionNode = defineNode({
   description: 'Apply custom convolution kernel',
   icon: 'grid_3x3',
   hasLocalTransform: true,
+  requiresSpatialCoherence: true,
 
   inputs: [
     {
