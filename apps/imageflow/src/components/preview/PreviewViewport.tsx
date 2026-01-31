@@ -1000,7 +1000,7 @@ export function PreviewViewport() {
             {/* Slot 1 - Foreground A */}
             <button
               onClick={() => { setPreviewForeground(0); ensureOutputs(previewSlots[0]); }}
-              className={`w-6 h-6 rounded text-xs font-bold transition-colors ${
+              className={`w-6 h-6 rounded text-xs font-bold transition-colors border border-white/20 ${
                 previewForegroundSlot === 0
                   ? 'text-white shadow-md'
                   : 'text-editor-text-dim hover:text-white opacity-50 hover:opacity-100'
@@ -1017,7 +1017,7 @@ export function PreviewViewport() {
             {/* Slot 2 - Foreground B */}
             <button
               onClick={() => { setPreviewForeground(1); ensureOutputs(previewSlots[1]); }}
-              className={`w-6 h-6 rounded text-xs font-bold transition-colors ${
+              className={`w-6 h-6 rounded text-xs font-bold transition-colors border border-white/20 ${
                 previewForegroundSlot === 1
                   ? 'text-white shadow-md'
                   : 'text-editor-text-dim hover:text-white opacity-50 hover:opacity-100'
@@ -1035,7 +1035,7 @@ export function PreviewViewport() {
             {/* Slot 3 - Background */}
             <button
               onClick={() => { togglePreviewBackground(); ensureOutputs(previewSlots[2]); }}
-              className={`w-6 h-6 rounded text-xs font-bold transition-colors ${
+              className={`w-6 h-6 rounded text-xs font-bold transition-colors border border-white/20 ${
                 previewBackgroundActive
                   ? 'text-white shadow-md'
                   : 'text-editor-text-dim hover:text-white opacity-50 hover:opacity-100'
