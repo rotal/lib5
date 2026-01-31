@@ -977,7 +977,7 @@ export function PreviewViewport() {
       onKeyDown={handleKeyDown}
     >
       {/* Toolbar */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl overflow-visible relative z-10">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-editor-text">Preview</span>
           {/* Preview slot buttons */}
