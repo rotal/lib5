@@ -17,6 +17,7 @@ interface UiState {
   leftPanelWidth: number;
   rightPanelWidth: number;
   bottomPanelHeight: number;
+  splitPreviewWidth: number;
   activeModal: string | null;
   modalData: unknown;
   paletteSearchQuery: string;
@@ -53,7 +54,7 @@ interface UiActions {
   toggleRightPanel: () => void;
   toggleBottomPanel: () => void;
   setActiveMobilePanel: (panel: PanelId | null) => void;
-  setPanelSize: (panel: 'left' | 'right' | 'bottom', size: number) => void;
+  setPanelSize: (panel: 'left' | 'right' | 'bottom' | 'splitPreview', size: number) => void;
   openModal: (modalId: string, data?: unknown) => void;
   closeModal: () => void;
   setPaletteSearch: (query: string) => void;
@@ -105,10 +106,11 @@ export const useUiStore = create<UiState & UiActions>((set, get) => ({
   leftPanelWidth: 240,
   rightPanelWidth: 280,
   bottomPanelHeight: 300,
+  splitPreviewWidth: 400,
   activeModal: null,
   modalData: null,
   paletteSearchQuery: '',
-  expandedCategories: new Set(['Input', 'Output', 'Adjust']),
+  expandedCategories: new Set(['Input', 'Output', 'Transform', 'Adjust']),
   previewSlots: restoredPreview?.previewSlots ?? [null, null, null],
   previewBackgroundActive: restoredPreview?.previewBackgroundActive ?? true,
   previewForegroundSlot: restoredPreview?.previewForegroundSlot ?? null,
@@ -170,6 +172,8 @@ export const useUiStore = create<UiState & UiActions>((set, get) => ({
           return { rightPanelWidth: Math.max(200, Math.min(500, size)) };
         case 'bottom':
           return { bottomPanelHeight: Math.max(150, Math.min(600, size)) };
+        case 'splitPreview':
+          return { splitPreviewWidth: Math.max(200, Math.min(800, size)) };
         default:
           return state;
       }
@@ -272,7 +276,7 @@ export const useUiStore = create<UiState & UiActions>((set, get) => ({
   },
 
   setPreviewSplitPosition: (position) => {
-    set({ previewSplitPosition: Math.max(0, Math.min(1, position)) });
+    set({ previewSplitPosition: position }); // No clamping - allow beyond canvas bounds
   },
 
   togglePreviewSplitDirection: () => {
@@ -311,6 +315,12 @@ export const useUiStore = create<UiState & UiActions>((set, get) => ({
     }));
   },
 }));
+
+// Frame callbacks stored outside React state to avoid infinite loops
+export const previewFrameCallbacks = {
+  frameAll: null as (() => void) | null,
+  frameCanvas: null as (() => void) | null,
+};
 
 // Persist preview state on changes
 useUiStore.subscribe(

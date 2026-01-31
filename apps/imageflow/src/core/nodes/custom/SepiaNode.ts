@@ -6,7 +6,6 @@ export const SepiaNode = defineCustomGPUNode({
   name: 'Sepia Tone',
   description: 'Apply a warm sepia tone effect',
   icon: 'photo_filter',
-  hasLocalTransform: true,
 
   inputs: [
     { id: 'image', name: 'Image', dataType: 'image', required: true },

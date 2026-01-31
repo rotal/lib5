@@ -1,8 +1,7 @@
-import { useMemo, useCallback, useState } from 'react';
+import { useMemo, useCallback } from 'react';
 import { useGraphStore, useExecutionStore } from '../../store';
 import { useGraph } from '../../hooks/useGraph';
 import { NodeRegistry } from '../../core/graph/NodeRegistry';
-import { LOCAL_TRANSFORM_PARAMS } from '../../types/node';
 import { ParameterInput } from './ParameterInput';
 
 interface DownloadData {
@@ -14,7 +13,6 @@ export function PropertiesPanel() {
   const { selectedNodeIds, graph } = useGraphStore();
   const { updateNodeParameter, commitParameterChange } = useGraph();
   const nodeOutputs = useExecutionStore((s) => s.nodeOutputs);
-  const [activeTab, setActiveTab] = useState<'properties' | 'transform'>('properties');
 
   // Get selected nodes
   const selectedNodes = useMemo(() => {
@@ -24,9 +22,6 @@ export function PropertiesPanel() {
   // Get the first selected node for editing
   const node = selectedNodes[0];
   const definition = node ? NodeRegistry.get(node.type) : null;
-
-  // Check if node has local transform
-  const hasLocalTransform = definition?.hasLocalTransform ?? false;
 
   const handleParameterChange = useCallback(
     (paramId: string, value: unknown) => {
@@ -46,19 +41,25 @@ export function PropertiesPanel() {
     [node, commitParameterChange]
   );
 
-  // Reset local transform to identity
-  const handleResetTransform = useCallback(() => {
-    if (!node || !hasLocalTransform) return;
-
-    updateNodeParameter(node.id, '_tx', 0);
-    updateNodeParameter(node.id, '_ty', 0);
-    updateNodeParameter(node.id, '_angle', 0);
-    updateNodeParameter(node.id, '_sx', 1);
-    updateNodeParameter(node.id, '_sy', 1);
-    updateNodeParameter(node.id, '_px', 0.5);
-    updateNodeParameter(node.id, '_py', 0.5);
-    commitParameterChange(node.id, '_sx');
-  }, [node, hasLocalTransform, updateNodeParameter, commitParameterChange]);
+  const handleAction = useCallback(
+    (action: string) => {
+      if (!node || !definition) return;
+      if (action === 'reset') {
+        // Reset all parameters to their defaults
+        for (const param of definition.parameters) {
+          if (param.type !== 'button') {
+            updateNodeParameter(node.id, param.id, param.default);
+          }
+        }
+        // Commit the first parameter to trigger execution
+        const firstParam = definition.parameters.find(p => p.type !== 'button');
+        if (firstParam) {
+          commitParameterChange(node.id, firstParam.id);
+        }
+      }
+    },
+    [node, definition, updateNodeParameter, commitParameterChange]
+  );
 
   // Get download data for Export nodes
   const downloadData = useMemo((): DownloadData | null => {
@@ -120,101 +121,43 @@ export function PropertiesPanel() {
         <p className="text-xs text-editor-text-dim mt-0.5">{definition.description}</p>
       </div>
 
-      {/* Tab bar - only show if node has local transform */}
-      {hasLocalTransform && (
-        <div className="flex border-b border-editor-border">
-          <button
-            onClick={() => setActiveTab('properties')}
-            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-              activeTab === 'properties'
-                ? 'text-editor-text border-b-2 border-editor-accent bg-editor-surface-light'
-                : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light'
-            }`}
-          >
-            Properties
-          </button>
-          <button
-            onClick={() => setActiveTab('transform')}
-            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-              activeTab === 'transform'
-                ? 'text-editor-text border-b-2 border-editor-accent bg-editor-surface-light'
-                : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light'
-            }`}
-          >
-            Transform
-          </button>
-        </div>
-      )}
-
-      {/* Parameters / Transform content */}
+      {/* Parameters */}
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
-        {/* Properties tab (or no tabs for nodes without local transform) */}
-        {(activeTab === 'properties' || !hasLocalTransform) && (
-          <>
-            {definition.parameters.filter(p => p.id !== 'preview').length === 0 ? (
-              <p className="text-sm text-editor-text-dim">No parameters</p>
-            ) : (
-              definition.parameters
-                .filter(p => p.id !== 'preview') // Preview is shown on node header
-                .map((param) => (
-                  <ParameterInput
-                    key={param.id}
-                    definition={param}
-                    value={node.parameters[param.id]}
-                    onChange={(value) => handleParameterChange(param.id, value)}
-                    onChangeEnd={() => handleParameterChangeEnd(param.id)}
-                  />
-                ))
-            )}
-
-            {/* Download button for Export node */}
-            {node.type === 'output/export' && (
-              <div className="pt-2 border-t border-editor-border">
-                <button
-                  onClick={handleDownload}
-                  disabled={!downloadData}
-                  className={`w-full px-4 py-2 rounded font-medium text-sm flex items-center justify-center gap-2 transition-colors ${
-                    downloadData
-                      ? 'bg-editor-accent text-white hover:bg-editor-accent/80'
-                      : 'bg-editor-surface-light text-editor-text-dim cursor-not-allowed'
-                  }`}
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                  </svg>
-                  {downloadData ? `Download ${downloadData.filename}` : 'Execute to enable download'}
-                </button>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Transform tab */}
-        {activeTab === 'transform' && hasLocalTransform && (
-          <>
-            {LOCAL_TRANSFORM_PARAMS.map((param) => (
+        {definition.parameters.filter(p => p.id !== 'preview').length === 0 ? (
+          <p className="text-sm text-editor-text-dim">No parameters</p>
+        ) : (
+          definition.parameters
+            .filter(p => p.id !== 'preview') // Preview is shown on node header
+            .map((param) => (
               <ParameterInput
                 key={param.id}
                 definition={param}
                 value={node.parameters[param.id]}
                 onChange={(value) => handleParameterChange(param.id, value)}
                 onChangeEnd={() => handleParameterChangeEnd(param.id)}
+                onAction={handleAction}
               />
-            ))}
+            ))
+        )}
 
-            {/* Reset local transform button */}
-            <div className="pt-2 border-t border-editor-border">
-              <button
-                onClick={handleResetTransform}
-                className="w-full px-4 py-2 rounded font-medium text-sm flex items-center justify-center gap-2 transition-colors bg-editor-surface-light text-editor-text hover:bg-editor-surface-lighter"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Reset Transform
-              </button>
-            </div>
-          </>
+        {/* Download button for Export node */}
+        {node.type === 'output/export' && (
+          <div className="pt-2 border-t border-editor-border">
+            <button
+              onClick={handleDownload}
+              disabled={!downloadData}
+              className={`w-full px-4 py-2 rounded font-medium text-sm flex items-center justify-center gap-2 transition-colors ${
+                downloadData
+                  ? 'bg-editor-accent text-white hover:bg-editor-accent/80'
+                  : 'bg-editor-surface-light text-editor-text-dim cursor-not-allowed'
+              }`}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              {downloadData ? `Download ${downloadData.filename}` : 'Execute to enable download'}
+            </button>
+          </div>
         )}
       </div>
 

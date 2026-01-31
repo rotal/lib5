@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useUiStore } from '../../store';
 import { useKeyboard } from '../../hooks/useKeyboard';
 import { TopToolbar } from './TopToolbar';
@@ -61,7 +61,44 @@ export function AppLayout() {
     rightPanelOpen,
     rightPanelWidth,
     toggleRightPanel,
+    splitPreviewWidth,
+    setPanelSize,
   } = useUiStore();
+
+  // Draggable split state
+  const [isDraggingSplit, setIsDraggingSplit] = useState(false);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+
+  // Handle split drag
+  const handleSplitMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDraggingSplit(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isDraggingSplit) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!splitContainerRef.current) return;
+      const containerRect = splitContainerRef.current.getBoundingClientRect();
+      const newPreviewWidth = containerRect.right - e.clientX;
+      // Clamp between min and max
+      const clampedWidth = Math.max(200, Math.min(newPreviewWidth, containerRect.width - 200));
+      setPanelSize('splitPreview', clampedWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingSplit(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDraggingSplit, setPanelSize]);
 
   // Initialize keyboard shortcuts
   useKeyboard();
@@ -173,34 +210,43 @@ export function AppLayout() {
           onClick={toggleLeftPanel}
         />
 
-        {/* Main content area */}
-        <div className="flex-1 flex overflow-hidden min-w-0 relative">
-          {viewMode === 'settings' ? (
-            <SettingsView />
-          ) : viewMode === 'split' ? (
-            <>
-              {/* Graph canvas */}
-              <div className="flex-1 overflow-hidden min-w-[200px]">
-                <GraphCanvas />
-              </div>
+        {/* Main content area with bottom panel */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+          {/* Graph/Preview area */}
+          <div ref={splitContainerRef} className="flex-1 flex overflow-hidden min-h-0">
+            {viewMode === 'settings' ? (
+              <SettingsView />
+            ) : viewMode === 'split' ? (
+              <>
+                {/* Graph canvas */}
+                <div className="flex-1 overflow-hidden min-w-[200px]">
+                  <GraphCanvas />
+                </div>
 
-              {/* Vertical splitter */}
-              <div className="w-px bg-editor-border flex-shrink-0 relative group cursor-col-resize">
-                <div className="absolute inset-y-0 -left-1 -right-1 group-hover:bg-editor-accent/20 transition-colors" />
-              </div>
+                {/* Vertical splitter */}
+                <div
+                  className={`w-1 bg-editor-border flex-shrink-0 relative group cursor-col-resize hover:bg-editor-accent/40 transition-colors ${isDraggingSplit ? 'bg-editor-accent/60' : ''}`}
+                  onMouseDown={handleSplitMouseDown}
+                >
+                  <div className="absolute inset-y-0 -left-1 -right-1" />
+                </div>
 
-              {/* Preview viewport */}
-              <div className="w-[400px] flex-shrink-0 overflow-hidden min-w-[300px]">
-                <PreviewViewport />
-              </div>
-            </>
-          ) : viewMode === 'preview' ? (
-            <PreviewViewport />
-          ) : (
-            <GraphCanvas />
-          )}
+                {/* Preview viewport */}
+                <div
+                  className="flex-shrink-0 overflow-hidden"
+                  style={{ width: splitPreviewWidth, minWidth: 200 }}
+                >
+                  <PreviewViewport />
+                </div>
+              </>
+            ) : viewMode === 'preview' ? (
+              <PreviewViewport />
+            ) : (
+              <GraphCanvas />
+            )}
+          </div>
 
-          {/* Bottom code panel (floating) */}
+          {/* Bottom code panel */}
           {viewMode !== 'settings' && <BottomCodePanel />}
         </div>
 

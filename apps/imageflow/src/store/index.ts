@@ -4,7 +4,7 @@ import { enableMapSet } from 'immer';
 enableMapSet();
 
 export { useGraphStore } from './graphStore';
-export { useUiStore, type PanelId, type ViewMode, type Theme } from './uiStore';
+export { useUiStore, previewFrameCallbacks, type PanelId, type ViewMode, type Theme } from './uiStore';
 export { useExecutionStore } from './executionStore';
 export { useHistoryStore } from './historyStore';
 export { useAuthStore } from './authStore';

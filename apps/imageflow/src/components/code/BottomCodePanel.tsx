@@ -15,7 +15,6 @@ export function BottomCodePanel() {
 
   const panelRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('code');
 
   // Handle resize drag
@@ -86,15 +85,13 @@ export function BottomCodePanel() {
   return (
     <div
       ref={panelRef}
-      className="absolute bottom-0 left-0 right-0 z-40 flex flex-col pointer-events-none"
+      className="flex flex-col flex-shrink-0 bg-editor-surface-solid border-t border-editor-border"
       style={{ height: bottomPanelOpen ? bottomPanelHeight + TAB_HEIGHT : TAB_HEIGHT }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Resize handle (only when open) */}
       {bottomPanelOpen && (
         <div
-          className="h-1 cursor-ns-resize pointer-events-auto group"
+          className="h-1 cursor-ns-resize group flex-shrink-0 -mt-1"
           onMouseDown={handleResizeStart}
         >
           <div className={`h-full transition-colors ${isResizing ? 'bg-editor-accent' : 'bg-transparent group-hover:bg-editor-accent/50'}`} />
@@ -102,15 +99,7 @@ export function BottomCodePanel() {
       )}
 
       {/* Tab bar / Header */}
-      <div
-        className={`h-7 flex items-center pointer-events-auto transition-all duration-200 ${
-          bottomPanelOpen
-            ? 'bg-editor-surface-solid border-t border-editor-border'
-            : isHovered
-              ? 'bg-editor-surface/95 backdrop-blur-sm'
-              : 'bg-editor-surface/80 backdrop-blur-sm'
-        }`}
-      >
+      <div className="h-7 flex items-center flex-shrink-0">
         {/* Expand/Collapse button */}
         <button
           onClick={handleHeaderClick}
@@ -153,14 +142,12 @@ export function BottomCodePanel() {
       </div>
 
       {/* Panel content */}
-      <div
-        className={`flex-1 pointer-events-auto overflow-hidden transition-opacity duration-200 ${
-          bottomPanelOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
-      >
-        {activeTab === 'code' && <CodeView />}
-        {activeTab === 'logs' && <LogView />}
-      </div>
+      {bottomPanelOpen && (
+        <div className="flex-1 overflow-hidden min-h-0">
+          {activeTab === 'code' && <CodeView />}
+          {activeTab === 'logs' && <LogView />}
+        </div>
+      )}
     </div>
   );
 }

@@ -24,7 +24,6 @@ export const RampNode = defineNode({
   name: 'Ramp',
   description: 'Generate a gradient image',
   icon: 'gradient',
-  hasLocalTransform: true,
 
   inputs: [],
 

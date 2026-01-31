@@ -1,4 +1,4 @@
-import { DataType, PortValue } from './data';
+import { DataType, PortValue, Color } from './data';
 import { GPUContext } from './gpu';
 
 /**
@@ -16,7 +16,7 @@ export interface PortDefinition {
 /**
  * Parameter types for node configuration
  */
-export type ParameterType = 'number' | 'color' | 'boolean' | 'select' | 'string' | 'file' | 'size' | 'button';
+export type ParameterType = 'number' | 'color' | 'boolean' | 'select' | 'string' | 'file' | 'size';
 
 /**
  * Size value with width, height, and optional aspect lock
@@ -68,8 +68,6 @@ export interface ParameterDefinition {
   sizeConstraints?: SizeConstraints;
   options?: SelectOption[];
   accept?: string; // For file type, e.g., 'image/*'
-  /** For button type: action to perform ('reset' resets all params to defaults) */
-  action?: 'reset';
 }
 
 /**
@@ -99,9 +97,6 @@ export interface ExecutionContext {
   setCache: (key: string, value: PortValue) => void;
   /** GPU context for accelerated image processing (optional) */
   gpu?: GPUContext;
-  /** Canvas dimensions for normalized coordinate conversions */
-  canvasWidth: number;
-  canvasHeight: number;
 }
 
 /**
@@ -178,10 +173,9 @@ export interface NodeDefinition {
   heavyCompute?: boolean;
   /** Gizmo definition for interactive preview overlay */
   gizmo?: GizmoDefinition;
-  /**
-   * If true, input images with transforms will be baked before execution.
-   * Use for nodes that need pixel-accurate spatial operations (blur, convolution, etc.)
-   */
+  /** If true, node has built-in local transform params (_tx, _ty, _sx, _sy, _angle, _px, _py) */
+  hasLocalTransform?: boolean;
+  /** If true, node needs spatially coherent pixel data (e.g., blur, convolution). Transforms are baked before passing to such nodes. */
   requiresSpatialCoherence?: boolean;
 }
 
@@ -197,6 +191,8 @@ export interface NodeInstance {
   localPreview?: boolean;
   width?: number;
   height?: number;
+  /** Optional per-node override for default color used in smart transform baking */
+  defaultColorOverride?: Color;
 }
 
 /**
@@ -232,12 +228,41 @@ export function defineNode(definition: NodeDefinition): NodeDefinition {
 }
 
 /**
+ * Standard local transform parameter definitions.
+ * Used by nodes with hasLocalTransform: true.
+ * Parameter IDs are prefixed with _ to distinguish from node's own params.
+ */
+export const LOCAL_TRANSFORM_PARAMS: ParameterDefinition[] = [
+  { id: '_tx', name: 'Offset X', type: 'number', default: 0, constraints: { min: -4096, max: 4096, step: 1 } },
+  { id: '_ty', name: 'Offset Y', type: 'number', default: 0, constraints: { min: -4096, max: 4096, step: 1 } },
+  { id: '_sx', name: 'Scale X', type: 'number', default: 1, constraints: { min: 0.01, max: 5, step: 0.01 } },
+  { id: '_sy', name: 'Scale Y', type: 'number', default: 1, constraints: { min: 0.01, max: 5, step: 0.01 } },
+  { id: '_angle', name: 'Rotation', type: 'number', default: 0, constraints: { min: -360, max: 360, step: 0.1 } },
+  { id: '_px', name: 'Pivot X', type: 'number', default: 0.5, constraints: { min: 0, max: 1, step: 0.01 } },
+  { id: '_py', name: 'Pivot Y', type: 'number', default: 0.5, constraints: { min: 0, max: 1, step: 0.01 } },
+];
+
+/**
+ * Get the local transform parameter definitions.
+ * Returns an empty array if the node doesn't have local transform.
+ */
+export function getLocalTransformParams(definition: NodeDefinition): ParameterDefinition[] {
+  return definition.hasLocalTransform ? LOCAL_TRANSFORM_PARAMS : [];
+}
+
+/**
  * Get the default parameters for a node definition
  */
 export function getDefaultParameters(definition: NodeDefinition): Record<string, unknown> {
   const params: Record<string, unknown> = {};
   for (const param of definition.parameters) {
     params[param.id] = param.default;
+  }
+  // Add local transform defaults if node has hasLocalTransform
+  if (definition.hasLocalTransform) {
+    for (const param of LOCAL_TRANSFORM_PARAMS) {
+      params[param.id] = param.default;
+    }
   }
   return params;
 }

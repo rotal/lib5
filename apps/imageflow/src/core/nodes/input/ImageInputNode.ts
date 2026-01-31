@@ -6,7 +6,6 @@ export const ImageInputNode = defineNode({
   name: 'Image Input',
   description: 'Load an image from file',
   icon: 'image',
-  hasLocalTransform: true,
 
   inputs: [],
 

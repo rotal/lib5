@@ -1,6 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useGraph } from './useGraph';
-import { useGraphStore, useUiStore } from '../store';
+import { useGraphStore, useUiStore, previewFrameCallbacks } from '../store';
 
 /**
  * Hook for keyboard shortcuts
@@ -100,6 +100,20 @@ export function useKeyboard() {
     if (e.key === '`' && !cmdOrCtrl && !e.altKey && !e.shiftKey) {
       e.preventDefault();
       toggleBottomPanel();
+      return;
+    }
+
+    // F: Frame all content in preview
+    if (e.key === 'f' && !cmdOrCtrl && !e.altKey && !e.shiftKey) {
+      e.preventDefault();
+      previewFrameCallbacks.frameAll?.();
+      return;
+    }
+
+    // Shift+F: Frame canvas in preview
+    if (e.key === 'F' && !cmdOrCtrl && !e.altKey && e.shiftKey) {
+      e.preventDefault();
+      previewFrameCallbacks.frameCanvas?.();
       return;
     }
   }, [undo, redo, copy, cut, paste, selectAll, deleteSelection, canUndo, canRedo, toggleAllPreviews, toggleBottomPanel]);

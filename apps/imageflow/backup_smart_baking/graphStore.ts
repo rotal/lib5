@@ -13,6 +13,7 @@ import {
 } from '../types';
 import { NodeRegistry } from '../core/graph/NodeRegistry';
 import { wouldCreateCycle } from '../core/graph/TopologicalSort';
+import { memoryProfiler, formatBytes } from '../utils/memoryProfiler';
 
 const STORAGE_KEY = 'lib5-graph';
 
@@ -147,7 +148,11 @@ export const useGraphStore = create<GraphState & GraphActions>()(
 
   setCanvas: (width, height) => {
     set(produce((state: GraphState) => {
-      state.graph.canvas = { ...state.graph.canvas, width, height };
+      state.graph.canvas = {
+        ...state.graph.canvas,
+        width,
+        height,
+      };
     }));
   },
 
@@ -596,3 +601,32 @@ export const useGraphStore = create<GraphState & GraphActions>()(
     }
   )
 );
+
+// Register graph store with memory profiler
+memoryProfiler.registerCache('Graph node params', () => {
+  const state = useGraphStore.getState();
+  let totalBytes = 0;
+  let dataUrlCount = 0;
+
+  for (const node of Object.values(state.graph.nodes)) {
+    for (const value of Object.values(node.parameters)) {
+      if (typeof value === 'string') {
+        totalBytes += value.length * 2; // UTF-16
+        if (value.startsWith('data:')) {
+          dataUrlCount++;
+        }
+      } else if (typeof value === 'object' && value !== null) {
+        const obj = value as Record<string, unknown>;
+        if (typeof obj.dataUrl === 'string') {
+          totalBytes += obj.dataUrl.length * 2;
+          dataUrlCount++;
+        }
+      }
+    }
+  }
+
+  return {
+    size: Object.keys(state.graph.nodes).length,
+    description: `${Object.keys(state.graph.nodes).length} nodes, ${dataUrlCount} data URLs, ~${formatBytes(totalBytes)}`
+  };
+});

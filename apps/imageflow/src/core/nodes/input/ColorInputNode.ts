@@ -7,7 +7,6 @@ export const ColorInputNode = defineNode({
   name: 'Color',
   description: 'Generate a solid color image',
   icon: 'palette',
-  hasLocalTransform: true,
 
   inputs: [],
 

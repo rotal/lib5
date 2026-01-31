@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useGraph } from '../../hooks/useGraph';
 import { useGraphStore, useUiStore, useExecutionStore, useAuthStore } from '../../store';
 import { Button } from '../ui';
-import { serializeGraph, deserializeGraph } from '../../types/graph';
+import { serializeGraph, deserializeGraph, DEFAULT_CANVAS } from '../../types/graph';
 import { validateGraph } from '../../core/graph/GraphValidator';
 import { LoginButton, DriveFileDialog, LocalFileDialog } from '../auth';
 import { createFile as driveCreateFile, updateFile as driveUpdateFile } from '../../services/googleDrive';
 import { writeLocalFile, pickLocalDir, hasLocalDir } from '../../services/localProject';
 import { MemoryMonitor } from './MemoryMonitor';
+import { Color } from '../../types/data';
 
 // Modern icon components
 const UndoIcon = () => (
@@ -94,16 +95,13 @@ export function TopToolbar() {
   const [widthDropdownOpen, setWidthDropdownOpen] = useState(false);
   const [heightDropdownOpen, setHeightDropdownOpen] = useState(false);
   const [ratioDropdownOpen, setRatioDropdownOpen] = useState(false);
-  const [defaultColorOpen, setDefaultColorOpen] = useState(false);
+  const [defaultColorDropdownOpen, setDefaultColorDropdownOpen] = useState(false);
   const fileMenuRef = useRef<HTMLDivElement>(null);
   const mobileMenuRef = useRef<HTMLDivElement>(null);
   const widthDropdownRef = useRef<HTMLDivElement>(null);
   const heightDropdownRef = useRef<HTMLDivElement>(null);
   const ratioDropdownRef = useRef<HTMLDivElement>(null);
   const defaultColorRef = useRef<HTMLDivElement>(null);
-
-  // Get current default color
-  const defaultColor = graph.canvas?.defaultColor ?? { r: 0, g: 0, b: 0, a: 0 };
 
   // Popular resolution presets
   const resolutionPresets = [
@@ -127,6 +125,17 @@ export function TopToolbar() {
     { label: '2:3', width: 2, height: 3 },
     { label: '9:16', width: 9, height: 16 },
   ];
+
+  // Default color presets (RGBA 0.0-1.0)
+  const defaultColorPresets: { label: string; color: Color }[] = [
+    { label: 'Transparent', color: { r: 0, g: 0, b: 0, a: 0 } },
+    { label: 'Black', color: { r: 0, g: 0, b: 0, a: 1 } },
+    { label: 'White', color: { r: 1, g: 1, b: 1, a: 1 } },
+    { label: 'Gray', color: { r: 0.5, g: 0.5, b: 0.5, a: 1 } },
+  ];
+
+  // Get current default color
+  const currentDefaultColor = graph.canvas?.defaultColor ?? DEFAULT_CANVAS.defaultColor ?? { r: 0, g: 0, b: 0, a: 0 };
 
   // Sync local canvas inputs when graph canvas changes externally
   useEffect(() => {
@@ -366,7 +375,7 @@ export function TopToolbar() {
 
   // Close menus on click outside
   useEffect(() => {
-    if (!mobileMenuOpen && !fileMenuOpen && !widthDropdownOpen && !heightDropdownOpen && !ratioDropdownOpen && !defaultColorOpen) return;
+    if (!mobileMenuOpen && !fileMenuOpen && !widthDropdownOpen && !heightDropdownOpen && !ratioDropdownOpen && !defaultColorDropdownOpen) return;
 
     const handleClickOutside = (e: MouseEvent) => {
       if (mobileMenuRef.current && !mobileMenuRef.current.contains(e.target as Node)) {
@@ -385,13 +394,13 @@ export function TopToolbar() {
         setRatioDropdownOpen(false);
       }
       if (defaultColorRef.current && !defaultColorRef.current.contains(e.target as Node)) {
-        setDefaultColorOpen(false);
+        setDefaultColorDropdownOpen(false);
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [mobileMenuOpen, fileMenuOpen, widthDropdownOpen, heightDropdownOpen, ratioDropdownOpen, defaultColorOpen]);
+  }, [mobileMenuOpen, fileMenuOpen, widthDropdownOpen, heightDropdownOpen, ratioDropdownOpen, defaultColorDropdownOpen]);
 
   // Handle width preset selection
   const handleWidthPreset = useCallback((width: number) => {
@@ -439,28 +448,23 @@ export function TopToolbar() {
     setRatioDropdownOpen(false);
   }, [graph.canvas, setCanvas]);
 
-  // Preview toggle (split view on/off)
-  const previewOn = viewMode === 'split' || viewMode === 'preview';
-  const handlePreviewToggle = useCallback(() => {
-    setViewMode(previewOn ? 'graph' : 'split');
-  }, [previewOn, setViewMode]);
-
-  const PreviewToggle = () => (
-    <button
-      onClick={handlePreviewToggle}
-      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 border ${
-        previewOn
-          ? 'bg-editor-accent text-white border-editor-accent shadow-sm'
-          : 'bg-editor-surface-solid text-editor-text-dim hover:text-editor-text border-editor-border'
-      }`}
-      title={previewOn ? 'Hide preview' : 'Show preview'}
-    >
-      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.64 0 8.577 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.64 0-8.577-3.007-9.963-7.178z" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-      </svg>
-      Preview
-    </button>
+  // View mode toggle
+  const ViewModeToggle = () => (
+    <div className="flex items-center bg-editor-surface-solid rounded-lg p-0.5 border border-editor-border">
+      {(['graph', 'split', 'preview'] as const).map((mode) => (
+        <button
+          key={mode}
+          onClick={() => setViewMode(mode)}
+          className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
+            viewMode === mode
+              ? 'bg-editor-accent text-white shadow-sm'
+              : 'text-editor-text-dim hover:text-editor-text'
+          }`}
+        >
+          {mode.charAt(0).toUpperCase() + mode.slice(1)}
+        </button>
+      ))}
+    </div>
   );
 
   // File menu dropdown
@@ -520,7 +524,7 @@ export function TopToolbar() {
       {/* View section */}
       <div className="px-3 py-1.5 text-[10px] font-semibold text-editor-text-dim uppercase tracking-wider">View</div>
       <div className="px-3 py-2">
-        <PreviewToggle />
+        <ViewModeToggle />
       </div>
 
       <div className="dropdown-divider" />
@@ -570,8 +574,6 @@ export function TopToolbar() {
 
           {/* Project name */}
           <input
-            id="mobile-project-name"
-            name="mobile-project-name"
             type="text"
             value={graph.name}
             onChange={(e) => setGraphName(e.target.value)}
@@ -643,8 +645,6 @@ export function TopToolbar() {
 
           {/* Project name */}
           <input
-            id="project-name"
-            name="project-name"
             type="text"
             value={graph.name}
             onChange={(e) => setGraphName(e.target.value)}
@@ -696,8 +696,6 @@ export function TopToolbar() {
             {/* Width input with dropdown */}
             <div className="relative flex items-center" ref={widthDropdownRef}>
               <input
-                id="canvas-width"
-                name="canvas-width"
                 type="text"
                 value={canvasWidthInput}
                 onChange={(e) => setCanvasWidthInput(e.target.value)}
@@ -768,8 +766,6 @@ export function TopToolbar() {
             {/* Height input with dropdown */}
             <div className="relative flex items-center" ref={heightDropdownRef}>
               <input
-                id="canvas-height"
-                name="canvas-height"
                 type="text"
                 value={canvasHeightInput}
                 onChange={(e) => setCanvasHeightInput(e.target.value)}
@@ -819,102 +815,60 @@ export function TopToolbar() {
             {/* Default color picker */}
             <div className="relative" ref={defaultColorRef}>
               <button
-                onClick={() => setDefaultColorOpen(!defaultColorOpen)}
-                className="h-7 w-7 rounded-lg border border-editor-border hover:border-editor-accent transition-colors flex items-center justify-center overflow-hidden"
-                title="Canvas default color (for smart transform baking)"
-                style={{
-                  // Checkerboard pattern for transparency
-                  backgroundImage: `
-                    linear-gradient(45deg, #404040 25%, transparent 25%),
-                    linear-gradient(-45deg, #404040 25%, transparent 25%),
-                    linear-gradient(45deg, transparent 75%, #404040 75%),
-                    linear-gradient(-45deg, transparent 75%, #404040 75%)
-                  `,
-                  backgroundSize: '8px 8px',
-                  backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0px',
-                }}
+                onClick={() => setDefaultColorDropdownOpen(!defaultColorDropdownOpen)}
+                className="h-7 w-7 flex items-center justify-center bg-editor-surface-light/50 border border-editor-border rounded-lg hover:bg-editor-surface-light transition-colors"
+                title="Default background color (for smart transform baking)"
               >
-                <div
-                  className="w-full h-full"
-                  style={{
-                    backgroundColor: `rgba(${Math.round(defaultColor.r * 255)}, ${Math.round(defaultColor.g * 255)}, ${Math.round(defaultColor.b * 255)}, ${defaultColor.a})`,
-                  }}
-                />
+                {/* Color swatch with checkerboard for alpha */}
+                <div className="w-4 h-4 rounded relative overflow-hidden border border-editor-border">
+                  {/* Checkerboard pattern for transparency */}
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      backgroundImage: 'linear-gradient(45deg, #666 25%, transparent 25%), linear-gradient(-45deg, #666 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #666 75%), linear-gradient(-45deg, transparent 75%, #666 75%)',
+                      backgroundSize: '6px 6px',
+                      backgroundPosition: '0 0, 0 3px, 3px -3px, -3px 0px',
+                    }}
+                  />
+                  {/* Actual color overlay */}
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      backgroundColor: `rgba(${Math.round(currentDefaultColor.r * 255)}, ${Math.round(currentDefaultColor.g * 255)}, ${Math.round(currentDefaultColor.b * 255)}, ${currentDefaultColor.a})`,
+                    }}
+                  />
+                </div>
               </button>
-              {defaultColorOpen && (
-                <div className="dropdown-menu absolute top-full right-0 mt-1 z-50 p-3 min-w-[200px]">
-                  <div className="text-xs text-editor-text-dim mb-2">Default Color</div>
-                  <div className="space-y-2">
-                    {/* Color presets */}
-                    <div className="flex gap-1 flex-wrap">
-                      {[
-                        { label: 'Transparent', color: { r: 0, g: 0, b: 0, a: 0 } },
-                        { label: 'Black', color: { r: 0, g: 0, b: 0, a: 1 } },
-                        { label: 'White', color: { r: 1, g: 1, b: 1, a: 1 } },
-                        { label: 'Gray', color: { r: 0.5, g: 0.5, b: 0.5, a: 1 } },
-                      ].map((preset) => (
-                        <button
-                          key={preset.label}
-                          onClick={() => {
-                            setCanvasDefaultColor(preset.color);
-                            setDefaultColorOpen(false);
-                          }}
-                          className="w-8 h-8 rounded border border-editor-border hover:border-editor-accent transition-colors overflow-hidden"
-                          title={preset.label}
+              {defaultColorDropdownOpen && (
+                <div className="dropdown-menu absolute top-full right-0 mt-1 z-50 min-w-[120px]">
+                  {defaultColorPresets.map((preset) => (
+                    <button
+                      key={preset.label}
+                      className="dropdown-item w-full text-left flex items-center gap-2"
+                      onClick={() => {
+                        setCanvasDefaultColor(preset.color);
+                        setDefaultColorDropdownOpen(false);
+                      }}
+                    >
+                      <div className="w-4 h-4 rounded relative overflow-hidden border border-editor-border">
+                        <div
+                          className="absolute inset-0"
                           style={{
-                            backgroundImage: preset.color.a < 1 ? `
-                              linear-gradient(45deg, #404040 25%, transparent 25%),
-                              linear-gradient(-45deg, #404040 25%, transparent 25%),
-                              linear-gradient(45deg, transparent 75%, #404040 75%),
-                              linear-gradient(-45deg, transparent 75%, #404040 75%)
-                            ` : undefined,
+                            backgroundImage: 'linear-gradient(45deg, #666 25%, transparent 25%), linear-gradient(-45deg, #666 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #666 75%), linear-gradient(-45deg, transparent 75%, #666 75%)',
                             backgroundSize: '6px 6px',
                             backgroundPosition: '0 0, 0 3px, 3px -3px, -3px 0px',
                           }}
-                        >
-                          <div
-                            className="w-full h-full"
-                            style={{
-                              backgroundColor: `rgba(${Math.round(preset.color.r * 255)}, ${Math.round(preset.color.g * 255)}, ${Math.round(preset.color.b * 255)}, ${preset.color.a})`,
-                            }}
-                          />
-                        </button>
-                      ))}
-                    </div>
-                    {/* Custom color input */}
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="canvas-default-color"
-                        name="canvas-default-color"
-                        type="color"
-                        value={`#${Math.round(defaultColor.r * 255).toString(16).padStart(2, '0')}${Math.round(defaultColor.g * 255).toString(16).padStart(2, '0')}${Math.round(defaultColor.b * 255).toString(16).padStart(2, '0')}`}
-                        onChange={(e) => {
-                          const hex = e.target.value;
-                          const r = parseInt(hex.slice(1, 3), 16) / 255;
-                          const g = parseInt(hex.slice(3, 5), 16) / 255;
-                          const b = parseInt(hex.slice(5, 7), 16) / 255;
-                          setCanvasDefaultColor({ r, g, b, a: defaultColor.a });
-                        }}
-                        className="w-8 h-8 rounded cursor-pointer"
-                      />
-                      <div className="flex-1">
-                        <label htmlFor="canvas-default-alpha" className="text-[10px] text-editor-text-dim">Alpha</label>
-                        <input
-                          id="canvas-default-alpha"
-                          name="canvas-default-alpha"
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.01"
-                          value={defaultColor.a}
-                          onChange={(e) => {
-                            setCanvasDefaultColor({ ...defaultColor, a: parseFloat(e.target.value) });
+                        />
+                        <div
+                          className="absolute inset-0"
+                          style={{
+                            backgroundColor: `rgba(${Math.round(preset.color.r * 255)}, ${Math.round(preset.color.g * 255)}, ${Math.round(preset.color.b * 255)}, ${preset.color.a})`,
                           }}
-                          className="w-full h-1.5 bg-editor-surface-light rounded-lg appearance-none cursor-pointer"
                         />
                       </div>
-                    </div>
-                  </div>
+                      {preset.label}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
@@ -923,7 +877,7 @@ export function TopToolbar() {
           <div className="flex-1" />
 
           {/* View mode toggle */}
-          <PreviewToggle />
+          <ViewModeToggle />
 
           {/* Memory monitor */}
           <MemoryMonitor />

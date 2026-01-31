@@ -27,8 +27,6 @@ interface ExecutionActions {
   executePartial: (dirtyNodeIds: string[]) => Promise<void>;
   /** Execute only a single node using cached inputs (for interactive gizmo editing) */
   executeSingleNode: (nodeId: string, markOthersDirty?: string[]) => Promise<void>;
-  /** Propagate transform changes to downstream nodes without re-executing */
-  propagateTransform: (nodeId: string, downstreamNodeIds: string[]) => void;
   abort: () => void;
   clearCache: () => void;
   markNodesDirty: (nodeIds: string[]) => void;
@@ -188,12 +186,6 @@ export const useExecutionStore = create<ExecutionState & ExecutionActions>((set,
     } catch (error) {
       console.error('Single node execution failed:', error);
     }
-  },
-
-  propagateTransform: (nodeId, downstreamNodeIds) => {
-    const { engine } = get();
-    if (!engine) return;
-    engine.propagateTransformToDownstream(nodeId, downstreamNodeIds);
   },
 
   abort: () => {

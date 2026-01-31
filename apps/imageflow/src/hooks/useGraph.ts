@@ -2,6 +2,13 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useGraphStore, useExecutionStore, useHistoryStore } from '../store';
 import { getDownstreamNodes } from '../core/graph/TopologicalSort';
 
+// Transform node parameters that should NOT trigger execution during drag
+// These are applied visually in PreviewViewport for real-time feedback
+const TRANSFORM_NODE_PARAMS = new Set([
+  'offsetX', 'offsetY', 'angle', 'scaleX', 'scaleY',
+  'pivotX', 'pivotY', 'uniformScale'
+]);
+
 /**
  * Hook for graph manipulation with history tracking
  */
@@ -136,6 +143,19 @@ export function useGraph() {
     const freshGraph = useGraphStore.getState().graph;
     const exec = useExecutionStore.getState();
 
+    // Check if this is a TransformNode parameter - these get real-time visual updates
+    // without execution, so we only update the store (done above)
+    const node = freshGraph.nodes[nodeId];
+    const isTransformNodeParam = node?.type === 'transform/transform' && TRANSFORM_NODE_PARAMS.has(paramId);
+
+    if (isTransformNodeParam) {
+      // For TransformNode params: DON'T mark dirty or execute
+      // PreviewViewport will compute the visual transform from current params
+      // Just update engine with latest graph (already done above)
+      exec.updateEngineGraph(freshGraph);
+      return;
+    }
+
     // Update engine with latest graph state
     exec.updateEngineGraph(freshGraph);
 
@@ -176,10 +196,23 @@ export function useGraph() {
     const freshGraph = useGraphStore.getState().graph;
     const exec = useExecutionStore.getState();
 
+    // Check if this is a TransformNode and ALL updates are transform params
+    const node = freshGraph.nodes[nodeId];
+    const isTransformNode = node?.type === 'transform/transform';
+    const allTransformNodeParams = isTransformNode &&
+      Object.keys(updates).every(paramId => TRANSFORM_NODE_PARAMS.has(paramId));
+
+    if (allTransformNodeParams) {
+      // For TransformNode params: DON'T mark dirty or execute
+      // PreviewViewport will compute the visual transform from current params
+      exec.updateEngineGraph(freshGraph);
+      return;
+    }
+
     // Update engine with latest graph state
     exec.updateEngineGraph(freshGraph);
 
-    // Check if ALL updates are transform-only params
+    // Check if ALL updates are transform-only params (legacy _ prefix)
     const allTransformParams = Object.keys(updates).every(paramId => paramId.startsWith('_'));
 
     if (allTransformParams) {
@@ -200,28 +233,25 @@ export function useGraph() {
   }, [graphStore]);
 
   // Save parameter change to history (debounced, called on mouse up)
-  // LAZY EVALUATION: For transform changes, propagate transforms
-  // For non-transform changes, nodes stay dirty until preview requests them
+  // LAZY EVALUATION: Nodes stay dirty until preview requests them
   const commitParameterChange = useCallback((nodeId: string, paramId: string) => {
     // Get fresh graph state
     const freshGraph = useGraphStore.getState().graph;
     historyStore.saveState(freshGraph, `Change ${paramId}`);
 
     const exec = useExecutionStore.getState();
-    const isTransformParam = paramId.startsWith('_');
+    exec.updateEngineGraph(freshGraph);
 
-    if (isTransformParam) {
-      // Transform-only: propagate transform to downstream nodes without re-executing
-      // This updates their cached outputs' transforms in-place (no new allocations)
-      const downstreamNodes = getDownstreamNodes(freshGraph, nodeId);
-      exec.updateEngineGraph(freshGraph);
-      exec.propagateTransform(nodeId, Array.from(downstreamNodes));
-      exec.clearDirtyPreviews();
-    } else {
-      // Non-transform params: nodes stay dirty
-      // Clear visual dirty preview indicators (the dirtyNodes set remains)
-      exec.clearDirtyPreviews();
+    // For TransformNode params that were updated without execution during drag,
+    // now mark the node and downstream as dirty to trigger lazy re-execution
+    const node = freshGraph.nodes[nodeId];
+    const isTransformNodeParam = node?.type === 'transform/transform' && TRANSFORM_NODE_PARAMS.has(paramId);
+    if (isTransformNodeParam) {
+      exec.markDirtyWithDownstream(nodeId);
     }
+
+    // Clear visual dirty preview indicators (the dirtyNodes set remains)
+    exec.clearDirtyPreviews();
   }, [historyStore]);
 
   // Move node (no history until commit)

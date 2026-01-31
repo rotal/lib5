@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { Graph, NodeInstance, Edge } from '../types';
+import { memoryProfiler, formatBytes } from '../utils/memoryProfiler';
 
 interface HistoryEntry {
   id: string;
@@ -51,7 +52,7 @@ function deepCloneEdges(edges: Record<string, Edge>): Record<string, Edge> {
 export const useHistoryStore = create<HistoryState & HistoryActions>((set, get) => ({
   entries: [],
   currentIndex: -1,
-  maxEntries: 50,
+  maxEntries: 20, // Reduced from 50 to save memory (data URLs in history can be huge)
   isSaving: false,
 
   saveState: (graph, description) => {
@@ -165,3 +166,31 @@ export const useHistoryStore = create<HistoryState & HistoryActions>((set, get) 
     };
   },
 }));
+
+// Register history store with memory profiler
+memoryProfiler.registerCache('History entries', () => {
+  const state = useHistoryStore.getState();
+  let totalBytes = 0;
+
+  // Estimate memory by counting string lengths in parameters (especially data URLs)
+  for (const entry of state.entries) {
+    for (const node of Object.values(entry.nodes)) {
+      for (const value of Object.values(node.parameters)) {
+        if (typeof value === 'string') {
+          totalBytes += value.length * 2; // UTF-16
+        } else if (typeof value === 'object' && value !== null) {
+          // Check for dataUrl in file params
+          const obj = value as Record<string, unknown>;
+          if (typeof obj.dataUrl === 'string') {
+            totalBytes += obj.dataUrl.length * 2;
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    size: state.entries.length,
+    description: `${state.entries.length}/${state.maxEntries} entries, ~${formatBytes(totalBytes)} in strings`
+  };
+});

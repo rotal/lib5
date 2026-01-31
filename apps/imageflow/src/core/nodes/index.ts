@@ -27,6 +27,9 @@ import { SplitChannelsNode, MergeChannelsNode, MathNode, ReorderChannelsNode } f
 // Custom nodes
 import { SepiaNode, VignetteNode } from './custom';
 
+// Transform nodes
+import { TransformNode } from './transform';
+
 /**
  * Register all built-in nodes with the registry
  */
@@ -74,6 +77,9 @@ export function registerAllNodes(): void {
   // Custom
   NodeRegistry.register(SepiaNode);
   NodeRegistry.register(VignetteNode);
+
+  // Transform
+  NodeRegistry.register(TransformNode);
 }
 
 // Re-export node definitions for direct access if needed
@@ -113,4 +119,6 @@ export {
   // Custom
   SepiaNode,
   VignetteNode,
+  // Transform
+  TransformNode,
 };

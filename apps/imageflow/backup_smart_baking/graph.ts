@@ -28,12 +28,7 @@ export interface ViewportState {
 export interface CanvasSettings {
   width: number;
   height: number;
-  /**
-   * Default/background color for the canvas.
-   * Used for smart transform baking - edges matching this color are considered "empty"
-   * and transforms that only affect empty edges won't trigger pixel resampling.
-   * Defaults to transparent black (0, 0, 0, 0).
-   */
+  /** Default background color used for smart transform baking decisions (RGBA 0.0-1.0) */
   defaultColor?: Color;
 }
 

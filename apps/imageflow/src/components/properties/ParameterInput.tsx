@@ -8,6 +8,7 @@ interface ParameterInputProps {
   value: unknown;
   onChange: (value: unknown) => void;
   onChangeEnd: () => void;
+  onAction?: (action: string) => void;
 }
 
 export function ParameterInput({
@@ -15,6 +16,7 @@ export function ParameterInput({
   value,
   onChange,
   onChangeEnd,
+  onAction,
 }: ParameterInputProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -209,6 +211,22 @@ export function ParameterInput({
             </p>
           )}
         </div>
+      );
+    }
+
+    case 'button': {
+      return (
+        <button
+          type="button"
+          onClick={() => {
+            if (definition.action && onAction) {
+              onAction(definition.action);
+            }
+          }}
+          className="w-full px-3 py-2 bg-editor-surface-light border border-editor-border rounded-md text-sm text-editor-text hover:bg-editor-border transition-colors"
+        >
+          {definition.name}
+        </button>
       );
     }
 
