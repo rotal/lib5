@@ -1075,7 +1075,7 @@ export function PreviewViewport() {
               <span className="text-[10px]">▾</span>
             </button>
             {channelDropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 bg-editor-surface-solid border border-editor-border rounded shadow-lg z-50 min-w-[70px] py-1">
+              <div className="absolute top-full left-0 mt-2 bg-editor-surface/40 backdrop-blur-xl border border-white/10 rounded-lg shadow-2xl z-50 min-w-[70px] py-1">
                 {(['rgba', 'r', 'g', 'b', 'a'] as const).map((ch) => (
                   <button
                     key={ch}
@@ -1083,10 +1083,10 @@ export function PreviewViewport() {
                       setChannelMode(ch);
                       setChannelDropdownOpen(false);
                     }}
-                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs transition-colors ${
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-all duration-100 ${
                       channelMode === ch
-                        ? 'text-editor-text'
-                        : 'text-editor-text-dim hover:text-editor-text hover:bg-editor-surface-light/50'
+                        ? 'bg-sky-500/15 text-sky-300'
+                        : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
                     }`}
                   >
                     <span className="w-4 text-center text-[10px]">{channelMode === ch ? '✓' : ''}</span>
