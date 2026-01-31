@@ -1074,38 +1074,61 @@ export function PreviewViewport() {
           <div className="relative" ref={hudDropdownRef}>
             <button
               onClick={() => setHudDropdownOpen(!hudDropdownOpen)}
-              className={`px-1.5 py-0.5 text-xs rounded border cursor-pointer focus:outline-none focus:border-editor-accent ${
+              className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-all duration-150 ${
                 hudModes.size > 0
-                  ? 'bg-yellow-500/20 border-yellow-500/50 text-yellow-300 font-bold'
-                  : 'bg-editor-surface-light border-editor-border text-editor-text-dim'
+                  ? 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 shadow-[0_0_8px_rgba(251,191,36,0.3)]'
+                  : 'bg-editor-surface-light/50 text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
               }`}
               title="HUD overlay"
             >
-              HUD
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              <span className="font-medium">HUD</span>
+              {hudModes.size > 0 && (
+                <span className="ml-0.5 w-4 h-4 rounded-full bg-amber-500/30 text-[9px] flex items-center justify-center font-bold">
+                  {hudModes.size}
+                </span>
+              )}
             </button>
             {hudDropdownOpen && (
-              <div className="absolute top-full left-0 mt-1 bg-editor-surface-solid border border-editor-border rounded shadow-lg z-50 min-w-[100px]">
-                {(['viewport', 'image', 'transform', 'borders'] as const).map((mode) => (
-                  <label
-                    key={mode}
-                    className="flex items-center gap-2 px-2 py-1 hover:bg-editor-surface-light cursor-pointer text-xs"
+              <div className="absolute top-full right-0 mt-2 bg-editor-surface-solid/95 backdrop-blur-sm border border-editor-border/50 rounded-lg shadow-xl z-50 min-w-[140px] overflow-hidden">
+                <div className="px-3 py-2 border-b border-editor-border/30 text-[10px] text-editor-text-dim uppercase tracking-wider font-medium">
+                  Display Options
+                </div>
+                {([
+                  { id: 'viewport', icon: '⊞', label: 'Viewport' },
+                  { id: 'image', icon: '◫', label: 'Image' },
+                  { id: 'transform', icon: '⟲', label: 'Transform' },
+                  { id: 'borders', icon: '▢', label: 'Borders' },
+                ] as const).map(({ id, icon, label }) => (
+                  <button
+                    key={id}
+                    onClick={() => {
+                      const newModes = new Set(hudModes);
+                      if (newModes.has(id)) {
+                        newModes.delete(id);
+                      } else {
+                        newModes.add(id);
+                      }
+                      setHudModes(newModes);
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-all duration-100 ${
+                      hudModes.has(id)
+                        ? 'bg-amber-500/15 text-amber-300'
+                        : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
+                    }`}
                   >
-                    <input
-                      type="checkbox"
-                      checked={hudModes.has(mode)}
-                      onChange={(e) => {
-                        const newModes = new Set(hudModes);
-                        if (e.target.checked) {
-                          newModes.add(mode);
-                        } else {
-                          newModes.delete(mode);
-                        }
-                        setHudModes(newModes);
-                      }}
-                      className="w-3 h-3"
-                    />
-                    <span className="capitalize">{mode}</span>
-                  </label>
+                    <span className="w-4 text-center opacity-70">{icon}</span>
+                    <span className="flex-1 text-left">{label}</span>
+                    <div className={`w-8 h-4 rounded-full transition-all duration-150 ${
+                      hudModes.has(id) ? 'bg-amber-500' : 'bg-editor-surface-light'
+                    }`}>
+                      <div className={`w-3 h-3 rounded-full bg-white shadow-sm transform transition-transform duration-150 mt-0.5 ${
+                        hudModes.has(id) ? 'translate-x-4.5 ml-0.5' : 'translate-x-0.5'
+                      }`} style={{ marginLeft: hudModes.has(id) ? '1rem' : '0.125rem' }} />
+                    </div>
+                  </button>
                 ))}
               </div>
             )}
