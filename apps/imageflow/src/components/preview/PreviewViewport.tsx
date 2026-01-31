@@ -36,6 +36,7 @@ export function PreviewViewport() {
   const [isDraggingSplitter, setIsDraggingSplitter] = useState(false);
   const [isNearSplitter, setIsNearSplitter] = useState(false);
   const [channelMode, setChannelMode] = useState<'rgba' | 'r' | 'g' | 'b' | 'a'>('rgba');
+  const [lastSingleChannel, setLastSingleChannel] = useState<'r' | 'g' | 'b' | 'a'>('r');
   const [previewBgMode, setPreviewBgMode] = useState<'check' | 'grid' | 'black'>('check');
   const [hudModes, setHudModes] = useState<Set<'viewport' | 'image' | 'transform' | 'borders'>>(new Set());
   const [hudVisible, setHudVisible] = useState(true);
@@ -1076,11 +1077,26 @@ export function PreviewViewport() {
           )}
           {/* Channel isolation */}
           <span className="text-editor-text-dim text-xs mx-1">|</span>
-          <div className="relative" ref={channelDropdownRef}>
+          <div
+            className="relative"
+            ref={channelDropdownRef}
+            onMouseEnter={() => setChannelDropdownOpen(true)}
+            onMouseLeave={() => setChannelDropdownOpen(false)}
+          >
             <button
-              onClick={() => setChannelDropdownOpen(!channelDropdownOpen)}
-              className="w-10 text-center py-0.5 text-xs rounded transition-colors text-editor-text hover:bg-editor-surface-light"
-              title="Channel view"
+              onClick={() => {
+                if (channelMode === 'rgba') {
+                  setChannelMode(lastSingleChannel);
+                } else {
+                  setChannelMode('rgba');
+                }
+              }}
+              className={`w-10 text-center py-0.5 text-xs rounded transition-colors ${
+                channelMode !== 'rgba'
+                  ? 'bg-editor-surface-light text-editor-text'
+                  : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
+              }`}
+              title={channelMode === 'rgba' ? 'Isolate channel' : 'Show all channels'}
             >
               {channelMode.toUpperCase()}
             </button>
@@ -1091,7 +1107,9 @@ export function PreviewViewport() {
                     key={ch}
                     onClick={() => {
                       setChannelMode(ch);
-                      setChannelDropdownOpen(false);
+                      if (ch !== 'rgba') {
+                        setLastSingleChannel(ch);
+                      }
                     }}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-all duration-100 ${
                       channelMode === ch
