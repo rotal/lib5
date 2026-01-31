@@ -1109,10 +1109,10 @@ export function PreviewViewport() {
           <div className="relative" ref={hudDropdownRef}>
             <button
               onClick={() => setHudDropdownOpen(!hudDropdownOpen)}
-              className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-all duration-150 ${
+              className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
                 hudModes.size > 0
-                  ? 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 text-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.3)]'
-                  : 'bg-editor-surface-light/50 text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
+                  ? 'bg-editor-surface-light text-editor-text'
+                  : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
               }`}
               title="HUD overlay"
             >
