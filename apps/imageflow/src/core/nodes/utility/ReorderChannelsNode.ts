@@ -8,7 +8,6 @@ export const ReorderChannelsNode = defineNode({
   name: 'Reorder Channels',
   description: 'Remap and reorder RGBA channels',
   icon: 'shuffle',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -128,11 +127,14 @@ export const ReorderChannelsNode = defineNode({
 
       let inputTexture: GPUTexture;
       let needsInputRelease = false;
+      // Preserve transform from input FloatImage (GPU textures can't store transform)
+      let inputTransform: import('../../../types/data').Transform2D | undefined;
 
       if (isGPUTexture(input)) {
         inputTexture = input;
       } else if (isFloatImage(input)) {
         inputTexture = gpu.createTextureFromFloat(input);
+        inputTransform = input.transform;
         needsInputRelease = true;
       } else {
         inputTexture = gpu.createTexture(input as ImageData);
@@ -156,9 +158,13 @@ export const ReorderChannelsNode = defineNode({
         gpu.releaseTexture(inputTexture.id);
       }
 
-      if (preview) {
+      // If input had transform, we must download to preserve it (GPUTexture can't store transform)
+      if (preview || inputTransform) {
         const result = gpu.downloadTexture(outputTexture);
         gpu.releaseTexture(outputTexture.id);
+        if (inputTransform) {
+          result.transform = inputTransform;
+        }
         return { image: result };
       }
 
@@ -198,6 +204,9 @@ export const ReorderChannelsNode = defineNode({
       dst[i + 3] = getChannelValue(i, alphaSource);
     }
 
+    if (image.transform) {
+      result.transform = image.transform;
+    }
     return { image: result };
   },
 });

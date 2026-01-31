@@ -8,7 +8,6 @@ export const SplitChannelsNode = defineNode({
   name: 'Split Channels',
   description: 'Split image into RGBA channels',
   icon: 'layers_clear',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -148,6 +147,13 @@ export const SplitChannelsNode = defineNode({
     const greenImage = createFloatImage(width, height);
     const blueImage = createFloatImage(width, height);
     const alphaImage = createFloatImage(width, height);
+    // Preserve transform from input
+    if (inputImage.transform) {
+      redImage.transform = inputImage.transform;
+      greenImage.transform = inputImage.transform;
+      blueImage.transform = inputImage.transform;
+      alphaImage.transform = inputImage.transform;
+    }
 
     const redData = redImage.data;
     const greenData = greenImage.data;

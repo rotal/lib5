@@ -7,7 +7,6 @@ export const ApplyMaskNode = defineNode({
   name: 'Apply Mask',
   description: 'Apply mask to image alpha channel',
   icon: 'photo_filter',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -70,6 +69,10 @@ export const ApplyMaskNode = defineNode({
 
     const { width, height } = inputImage;
     const outputImage = createFloatImage(width, height);
+    // Preserve transform from input
+    if (inputImage.transform) {
+      outputImage.transform = inputImage.transform;
+    }
     const srcData = inputImage.data;
     const maskData = maskImage.data;
     const outData = outputImage.data;

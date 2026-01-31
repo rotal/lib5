@@ -7,7 +7,6 @@ export const SharpenNode = defineNode({
   name: 'Sharpen',
   description: 'Sharpen image using unsharp mask',
   icon: 'details',
-  hasLocalTransform: true,
   requiresSpatialCoherence: true,
 
   inputs: [
@@ -66,12 +65,14 @@ export const SharpenNode = defineNode({
     const threshold = (params.threshold as number) / 255; // Convert to 0-1 range
 
     if (amount === 0) {
-      return {
-        image: createFloatImage(inputImage.width, inputImage.height),
-      };
+      const result = createFloatImage(inputImage.width, inputImage.height);
+      if (inputImage.transform) {
+        result.transform = inputImage.transform;
+      }
+      return { image: result };
     }
 
-    const { width, height, data: srcData } = inputImage;
+    const { width, height, data: srcData, transform } = inputImage;
 
     // First, create blurred version (simple box blur for performance)
     const kernelSize = Math.ceil(radius) * 2 + 1;
@@ -147,6 +148,9 @@ export const SharpenNode = defineNode({
       dstData[i + 3] = srcData[i + 3]; // Preserve alpha
     }
 
+    if (transform) {
+      outputImage.transform = transform;
+    }
     return { image: outputImage };
   },
 });

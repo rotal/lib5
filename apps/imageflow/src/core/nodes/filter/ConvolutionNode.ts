@@ -1,5 +1,5 @@
 import { defineNode, ensureFloatImage } from '../defineNode';
-import { isGPUTexture, FloatImage, createFloatImage } from '../../../types/data';
+import { isGPUTexture, isFloatImage, FloatImage, createFloatImage } from '../../../types/data';
 import type { GPUContext, GPUTexture } from '../../../types/gpu';
 import type { ExecutionContext } from '../../../types/node';
 
@@ -145,6 +145,10 @@ function executeCPU(
   const kernelWidth = kernel[0]?.length || 0;
   const { width, height, data: srcData } = inputImage;
   const outputImage = createFloatImage(width, height);
+  // Preserve transform from input
+  if (inputImage.transform) {
+    outputImage.transform = inputImage.transform;
+  }
   const dstData = outputImage.data;
 
   const halfKH = Math.floor(kernelHeight / 2);
@@ -197,7 +201,6 @@ export const ConvolutionNode = defineNode({
   name: 'Convolution',
   description: 'Apply custom convolution kernel',
   icon: 'grid_3x3',
-  hasLocalTransform: true,
   requiresSpatialCoherence: true,
 
   inputs: [
@@ -298,13 +301,19 @@ export const ConvolutionNode = defineNode({
     // Try GPU path (supports up to 7x7 kernels)
     if (context.gpu?.isAvailable && kernelWidth <= 7 && kernelHeight <= 7) {
       try {
+        // Preserve transform from input FloatImage (GPU textures can't store transform)
+        const inputTransform = isFloatImage(input) ? input.transform : undefined;
+
         const gpuResult = executeGPU(input, kernel, strength, context.gpu);
         context.reportProgress(1);
 
-        // Download only if preview is enabled
-        if (params.preview) {
+        // If input had transform, we must download to preserve it (GPUTexture can't store transform)
+        if (params.preview || inputTransform) {
           const result = context.gpu.downloadTexture(gpuResult);
           context.gpu.releaseTexture(gpuResult.id);
+          if (inputTransform) {
+            result.transform = inputTransform;
+          }
           return { image: result };
         }
 

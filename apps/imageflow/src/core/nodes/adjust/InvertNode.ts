@@ -8,7 +8,6 @@ export const InvertNode = defineNode({
   name: 'Invert',
   description: 'Invert image colors',
   icon: 'invert_colors',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -60,11 +59,14 @@ export const InvertNode = defineNode({
 
       let inputTexture: GPUTexture;
       let needsInputRelease = false;
+      // Preserve transform from input FloatImage (GPU textures can't store transform)
+      let inputTransform: import('../../../types/data').Transform2D | undefined;
 
       if (isGPUTexture(input)) {
         inputTexture = input;
       } else if (isFloatImage(input)) {
         inputTexture = gpu.createTextureFromFloat(input);
+        inputTransform = input.transform;
         needsInputRelease = true;
       } else {
         inputTexture = gpu.createTexture(input as ImageData);
@@ -83,9 +85,13 @@ export const InvertNode = defineNode({
         gpu.releaseTexture(inputTexture.id);
       }
 
-      if (preview) {
+      // If input had transform, we must download to preserve it (GPUTexture can't store transform)
+      if (preview || inputTransform) {
         const result = gpu.downloadTexture(outputTexture);
         gpu.releaseTexture(outputTexture.id);
+        if (inputTransform) {
+          result.transform = inputTransform;
+        }
         return { image: result };
       }
 
@@ -98,7 +104,7 @@ export const InvertNode = defineNode({
       return { image: null };
     }
 
-    const { width, height, data: srcData } = inputImage;
+    const { width, height, data: srcData, transform } = inputImage;
     const outputImage = createFloatImage(width, height);
     const data = outputImage.data;
 
@@ -114,6 +120,9 @@ export const InvertNode = defineNode({
       }
     }
 
+    if (transform) {
+      outputImage.transform = transform;
+    }
     return { image: outputImage };
   },
 });

@@ -181,12 +181,245 @@ export function isIdentityTransform(t: Transform2D): boolean {
 }
 
 /**
+ * Check if transform is pure translation (no rotation or scale).
+ * Pure translations never need baking - just update the offset.
+ */
+export function isPureTranslation(t: Transform2D): boolean {
+  const eps = 1e-6;
+  return (
+    Math.abs(t.a - 1) < eps &&
+    Math.abs(t.b) < eps &&
+    Math.abs(t.c) < eps &&
+    Math.abs(t.d - 1) < eps
+  );
+}
+
+/**
+ * Check if transform has rotation (non-zero b or c components).
+ * Rotation can cause content to clip at edges if not baked.
+ */
+export function hasRotation(t: Transform2D): boolean {
+  const eps = 1e-6;
+  return Math.abs(t.b) > eps || Math.abs(t.c) > eps;
+}
+
+/**
+ * Check if a baking decision needs to inspect edge pixels.
+ * Returns false for pure translations (never need baking).
+ * Returns true if transform has rotation (scale alone doesn't change bbox shape).
+ */
+export function transformRequiresBakingCheck(t: Transform2D): boolean {
+  if (isPureTranslation(t)) return false;
+  return hasRotation(t);
+}
+
+/**
+ * Check if all edge pixels match the default color (considered "empty").
+ * If edges are empty, rotation won't clip content, so baking can be skipped.
+ * @param image The FloatImage to check
+ * @param defaultColor The color to compare against (RGBA 0.0-1.0)
+ * @param tolerance Color difference tolerance (default 1/255 for 8-bit precision)
+ */
+export function hasEmptyEdges(
+  image: FloatImage,
+  defaultColor: Color,
+  tolerance: number = 1 / 255
+): boolean {
+  const { data, width, height } = image;
+  const { r, g, b, a } = defaultColor;
+
+  // Check if a pixel matches the default color
+  const matchesDefault = (idx: number): boolean => {
+    return (
+      Math.abs(data[idx] - r) <= tolerance &&
+      Math.abs(data[idx + 1] - g) <= tolerance &&
+      Math.abs(data[idx + 2] - b) <= tolerance &&
+      Math.abs(data[idx + 3] - a) <= tolerance
+    );
+  };
+
+  // Check top and bottom rows
+  for (let x = 0; x < width; x++) {
+    const topIdx = x * 4;
+    const bottomIdx = ((height - 1) * width + x) * 4;
+    if (!matchesDefault(topIdx) || !matchesDefault(bottomIdx)) {
+      return false;
+    }
+  }
+
+  // Check left and right columns (skip corners already checked)
+  for (let y = 1; y < height - 1; y++) {
+    const leftIdx = (y * width) * 4;
+    const rightIdx = (y * width + width - 1) * 4;
+    if (!matchesDefault(leftIdx) || !matchesDefault(rightIdx)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Determine if a FloatImage's transform should be baked into pixels.
+ * Smart baking only resamples when necessary to prevent content clipping.
+ *
+ * Bakes when ALL conditions are true:
+ * 1. Image has a non-identity transform
+ * 2. Transform is not pure translation
+ * 3. Transform has rotation
+ * 4. Edge pixels contain content (don't match default color)
+ *
+ * @param image The FloatImage to check
+ * @param defaultColor The background/default color (edges matching this are "empty")
+ */
+export function shouldBakeTransform(image: FloatImage, defaultColor: Color): boolean {
+  const t = image.transform;
+
+  // No transform or identity - no baking needed
+  if (!t || isIdentityTransform(t)) return false;
+
+  // Pure translation - never bake, just adjust offset
+  if (isPureTranslation(t)) return false;
+
+  // No rotation - scale alone doesn't change bounding box shape
+  if (!hasRotation(t)) return false;
+
+  // Has rotation - check if edges are empty
+  // If edges match default color, content won't clip, so skip baking
+  return !hasEmptyEdges(image, defaultColor);
+}
+
+/**
+ * Bake a FloatImage's transform into pixels.
+ * If the image has no transform or identity transform, returns the image as-is.
+ * Otherwise, creates a new image with the transform applied via bilinear interpolation.
+ * The output image has a pure translation transform to maintain position.
+ * @param defaultColor Color to use for pixels outside source bounds (default: transparent black)
+ */
+export function applyTransformToImage(
+  image: FloatImage,
+  defaultColor: Color = { r: 0, g: 0, b: 0, a: 0 }
+): FloatImage {
+  // No transform or identity - return as-is
+  if (!image.transform || isIdentityTransform(image.transform)) {
+    // Return without transform property to indicate it's baked
+    if (image.transform) {
+      return {
+        data: image.data,
+        width: image.width,
+        height: image.height,
+      };
+    }
+    return image;
+  }
+
+  const transform = image.transform;
+  const srcW = image.width;
+  const srcH = image.height;
+  const src = image.data;
+
+  // Transform all 4 corners to find bounding box of transformed content
+  const corners = [
+    transformPoint(transform, 0, 0),
+    transformPoint(transform, srcW, 0),
+    transformPoint(transform, srcW, srcH),
+    transformPoint(transform, 0, srcH),
+  ];
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const c of corners) {
+    minX = Math.min(minX, c.x);
+    minY = Math.min(minY, c.y);
+    maxX = Math.max(maxX, c.x);
+    maxY = Math.max(maxY, c.y);
+  }
+
+  // Round to integer bounds
+  minX = Math.floor(minX);
+  minY = Math.floor(minY);
+  maxX = Math.ceil(maxX);
+  maxY = Math.ceil(maxY);
+
+  // Output dimensions = bounding box of transformed content
+  const dstW = maxX - minX;
+  const dstH = maxY - minY;
+
+  // Sanity check
+  if (dstW <= 0 || dstH <= 0 || dstW > 16384 || dstH > 16384) {
+    return image;
+  }
+
+  const dst = new Float32Array(dstW * dstH * 4);
+  trackFloat32Array(dst, 'applyTransformToImage');
+
+  // Inverse transform maps output coords to source coords
+  const inv = invertTransform(transform);
+
+  // Default color components for out-of-bounds sampling
+  const defaultRGBA = [defaultColor.r, defaultColor.g, defaultColor.b, defaultColor.a];
+
+  // Get pixel from source with bilinear interpolation
+  const sampleSource = (sx: number, sy: number, channel: number): number => {
+    if (sx < 0 || sx >= srcW || sy < 0 || sy >= srcH) {
+      return defaultRGBA[channel]; // Use default color outside source bounds
+    }
+    const x0 = Math.floor(sx);
+    const y0 = Math.floor(sy);
+    const x1 = Math.min(x0 + 1, srcW - 1);
+    const y1 = Math.min(y0 + 1, srcH - 1);
+    const fx = sx - x0;
+    const fy = sy - y0;
+
+    const v00 = src[(y0 * srcW + x0) * 4 + channel];
+    const v10 = src[(y0 * srcW + x1) * 4 + channel];
+    const v01 = src[(y1 * srcW + x0) * 4 + channel];
+    const v11 = src[(y1 * srcW + x1) * 4 + channel];
+
+    const v0 = v00 * (1 - fx) + v10 * fx;
+    const v1 = v01 * (1 - fx) + v11 * fx;
+    return v0 * (1 - fy) + v1 * fy;
+  };
+
+  // Fill destination buffer
+  for (let y = 0; y < dstH; y++) {
+    for (let x = 0; x < dstW; x++) {
+      // Output pixel position in transform space
+      const worldX = x + minX;
+      const worldY = y + minY;
+
+      // Map back to source image coords
+      const srcX = inv.a * worldX + inv.b * worldY + inv.tx;
+      const srcY = inv.c * worldX + inv.d * worldY + inv.ty;
+
+      const dstIdx = (y * dstW + x) * 4;
+      for (let c = 0; c < 4; c++) {
+        dst[dstIdx + c] = sampleSource(srcX, srcY, c);
+      }
+    }
+  }
+
+  // The baked image's position is encoded as a translation transform.
+  // We must account for the preview's centering offset: it draws images at
+  // (-width/2, -height/2) before applying transforms. Since the baked image
+  // has different dimensions than the source, we need to adjust the translation.
+  // Formula: tx = minX + (dstW - srcW) / 2, ty = minY + (dstH - srcH) / 2
+  return {
+    data: dst,
+    width: dstW,
+    height: dstH,
+    transform: translateTransform(
+      minX + (dstW - srcW) / 2,
+      minY + (dstH - srcH) / 2
+    ),
+  };
+}
+
+/**
  * Float image data with 32-bit float channels (0.0-1.0 range)
  * Supports HDR and high precision color processing
  *
- * Images exist in an infinite coordinate space. The transform defines
- * how to map from image-local coordinates to world coordinates.
- * Pixel data is never modified by transforms - only the matrix changes.
+ * Position and orientation in canvas space is defined by the transform matrix.
+ * Images without a transform are positioned at canvas center.
  */
 export interface FloatImage {
   /** RGBA pixel data as Float32Array (r,g,b,a,r,g,b,a,...) in 0.0-1.0 range */
@@ -195,43 +428,58 @@ export interface FloatImage {
   width: number;
   /** Image height in pixels */
   height: number;
-  /** Origin position in infinite canvas space (default: 0,0) - DEPRECATED, use transform */
-  origin?: { x: number; y: number };
-  /** Transform matrix mapping image-local to world coordinates */
+  /**
+   * Transform matrix to apply when rendering (NOT baked into pixels).
+   * Used for interactive preview - allows real-time transform without resampling.
+   * When present, preview should apply this transform visually.
+   * Downstream nodes that need spatial coherence (blur, convolution) should bake first.
+   */
   transform?: Transform2D;
-  /** Base transform before local node transform - used for incremental updates during gizmo drag */
-  baseTransform?: Transform2D;
 }
 
 /**
- * Get the boundary rect of a FloatImage in infinite canvas space
+ * Get the boundary rect of a FloatImage in canvas space.
+ * If transform is present, returns the axis-aligned bounding box of the transformed image.
  */
 export function getImageBoundary(image: FloatImage): Rect {
+  const { width, height, transform } = image;
+
+  if (!transform || isIdentityTransform(transform)) {
+    // No transform - image is at origin
+    return { x: 0, y: 0, width, height };
+  }
+
+  // Transform all 4 corners and find AABB
+  const corners = [
+    transformPoint(transform, 0, 0),
+    transformPoint(transform, width, 0),
+    transformPoint(transform, width, height),
+    transformPoint(transform, 0, height),
+  ];
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const c of corners) {
+    minX = Math.min(minX, c.x);
+    minY = Math.min(minY, c.y);
+    maxX = Math.max(maxX, c.x);
+    maxY = Math.max(maxY, c.y);
+  }
+
   return {
-    x: image.origin?.x ?? 0,
-    y: image.origin?.y ?? 0,
-    width: image.width,
-    height: image.height,
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
   };
 }
 
 /**
  * Create a new FloatImage with specified dimensions
- * @param origin Optional origin position in infinite canvas space
  */
-export function createFloatImage(
-  width: number,
-  height: number,
-  origin?: { x: number; y: number }
-): FloatImage {
+export function createFloatImage(width: number, height: number): FloatImage {
   const data = new Float32Array(width * height * 4);
   trackFloat32Array(data, 'createFloatImage');
-  return {
-    data,
-    width,
-    height,
-    origin,
-  };
+  return { data, width, height };
 }
 
 /**
@@ -296,29 +544,52 @@ export function cloneFloatImage(source: FloatImage): FloatImage {
     data: cloneData,
     width: source.width,
     height: source.height,
-    origin: source.origin ? { ...source.origin } : undefined,
+    transform: source.transform ? { ...source.transform } : undefined,
   };
 }
 
 /**
- * Apply/bake the transform into a FloatImage by resampling pixels.
- * Output is sized to fit the transformed content exactly.
+ * Parameters for baking a transform
+ */
+export interface BakeTransformParams {
+  /** Translation X in pixels */
+  translateX: number;
+  /** Translation Y in pixels */
+  translateY: number;
+  /** Scale X factor */
+  scaleX: number;
+  /** Scale Y factor */
+  scaleY: number;
+  /** Rotation angle in degrees */
+  angleDeg: number;
+  /** Pivot X (0-1 normalized to image width) */
+  pivotX: number;
+  /** Pivot Y (0-1 normalized to image height) */
+  pivotY: number;
+}
+
+/**
+ * Apply/bake a transform into a FloatImage by resampling pixels.
+ * Output is sized to fit the transformed content (AABB).
+ * Returns image with a translation transform to maintain position.
  * Uses bilinear interpolation for smooth results.
  */
-export function applyTransformToImage(image: FloatImage): FloatImage {
-  const transform = image.transform;
-  if (!transform || isIdentityTransform(transform)) {
-    // No transform or identity - just clone without transform property
-    const cloneData = new Float32Array(image.data);
-    trackFloat32Array(cloneData, 'applyTransform:identity');
-    return {
-      data: cloneData,
-      width: image.width,
-      height: image.height,
-    };
-  }
-
+export function bakeTransform(image: FloatImage, params: BakeTransformParams): FloatImage {
+  const { translateX, translateY, scaleX, scaleY, angleDeg, pivotX, pivotY } = params;
   const { width: srcW, height: srcH, data: src } = image;
+
+  // Pivot point in pixel coordinates (relative to image)
+  const pivotPxX = srcW * pivotX;
+  const pivotPxY = srcH * pivotY;
+
+  // Build transform matrix: translate to pivot, scale, rotate, translate back, then apply translation
+  const angleRad = angleDeg * (Math.PI / 180);
+  const transform = createPivotTransform(scaleX, scaleY, angleRad, pivotPxX, pivotPxY, translateX, translateY);
+
+  // Check if identity (no actual transformation needed)
+  if (isIdentityTransform(transform)) {
+    return cloneFloatImage(image);
+  }
 
   // Transform all 4 corners to find bounding box of transformed content
   const corners = [
@@ -348,19 +619,13 @@ export function applyTransformToImage(image: FloatImage): FloatImage {
 
   // Sanity check
   if (dstW <= 0 || dstH <= 0 || dstW > 16384 || dstH > 16384) {
-    const cloneData = new Float32Array(image.data);
-    trackFloat32Array(cloneData, 'applyTransform:invalid');
-    return {
-      data: cloneData,
-      width: image.width,
-      height: image.height,
-    };
+    return cloneFloatImage(image);
   }
 
   const dst = new Float32Array(dstW * dstH * 4);
-  trackFloat32Array(dst, 'applyTransform:resample');
+  trackFloat32Array(dst, 'bakeTransform');
 
-  // Inverse transform maps world coords to source coords
+  // Inverse transform maps output coords to source coords
   const inv = invertTransform(transform);
 
   // Get pixel from source with bilinear interpolation
@@ -388,13 +653,13 @@ export function applyTransformToImage(image: FloatImage): FloatImage {
   // Fill destination buffer
   for (let y = 0; y < dstH; y++) {
     for (let x = 0; x < dstW; x++) {
-      // Output pixel position in world coordinates
-      const worldX = x + minX;
-      const worldY = y + minY;
+      // Output pixel position relative to AABB origin
+      const localX = x + minX;
+      const localY = y + minY;
 
-      // Map world coords to source image coords
-      const srcX = inv.a * worldX + inv.b * worldY + inv.tx;
-      const srcY = inv.c * worldX + inv.d * worldY + inv.ty;
+      // Map to source image coords
+      const srcX = inv.a * localX + inv.b * localY + inv.tx;
+      const srcY = inv.c * localX + inv.d * localY + inv.ty;
 
       const dstIdx = (y * dstW + x) * 4;
       for (let c = 0; c < 4; c++) {
@@ -403,12 +668,19 @@ export function applyTransformToImage(image: FloatImage): FloatImage {
     }
   }
 
-  // Return image sized to fit transformed content
-  // No transform attached - pixels are fully baked
+  // The baked image's position is encoded as a translation transform.
+  // We must account for the preview's centering offset: it draws images at
+  // (-width/2, -height/2) before applying transforms. Since the baked image
+  // has different dimensions than the source, we need to adjust the translation.
+  // Formula: tx = minX + (dstW - srcW) / 2, ty = minY + (dstH - srcH) / 2
   return {
     data: dst,
     width: dstW,
     height: dstH,
+    transform: translateTransform(
+      minX + (dstW - srcW) / 2,
+      minY + (dstH - srcH) / 2
+    ),
   };
 }
 

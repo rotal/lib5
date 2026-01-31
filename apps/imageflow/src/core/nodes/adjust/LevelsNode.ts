@@ -8,7 +8,6 @@ export const LevelsNode = defineNode({
   name: 'Levels',
   description: 'Adjust input/output levels with gamma',
   icon: 'tune',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -97,11 +96,14 @@ export const LevelsNode = defineNode({
 
       let inputTexture: GPUTexture;
       let needsInputRelease = false;
+      // Preserve offset from input FloatImage (GPU textures don't carry offset)
+      let inputTransform: import('../../../types/data').Transform2D | undefined;
 
       if (isGPUTexture(input)) {
         inputTexture = input;
       } else if (isFloatImage(input)) {
         inputTexture = gpu.createTextureFromFloat(input);
+        inputTransform = input.transform;
         needsInputRelease = true;
       } else {
         inputTexture = gpu.createTexture(input as ImageData);
@@ -124,9 +126,13 @@ export const LevelsNode = defineNode({
         gpu.releaseTexture(inputTexture.id);
       }
 
-      if (preview) {
+      // If input had transform, we must download to preserve it (GPUTexture can't store transform)
+      if (preview || inputTransform) {
         const result = gpu.downloadTexture(outputTexture);
         gpu.releaseTexture(outputTexture.id);
+        if (inputTransform) {
+          result.transform = inputTransform;
+        }
         return { image: result };
       }
 
@@ -139,7 +145,7 @@ export const LevelsNode = defineNode({
       return { image: null };
     }
 
-    const { width, height, data: srcData } = inputImage;
+    const { width, height, data: srcData, transform } = inputImage;
     const outputImage = createFloatImage(width, height);
     const data = outputImage.data;
 
@@ -158,6 +164,9 @@ export const LevelsNode = defineNode({
       data[i + 3] = srcData[i + 3]; // preserve alpha
     }
 
+    if (transform) {
+      outputImage.transform = transform;
+    }
     return { image: outputImage };
   },
 });

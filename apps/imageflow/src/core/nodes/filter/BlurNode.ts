@@ -1,5 +1,5 @@
 import { defineNode, ensureFloatImage } from '../defineNode';
-import { isGPUTexture, isFloatImage, FloatImage, createFloatImage } from '../../../types/data';
+import { isGPUTexture, isFloatImage, FloatImage, createFloatImage, cloneFloatImage } from '../../../types/data';
 import type { GPUContext, GPUTexture } from '../../../types/gpu';
 import type { ExecutionContext } from '../../../types/node';
 
@@ -166,6 +166,9 @@ function executeCPU(
     }
   }
 
+  if (inputImage.transform) {
+    outputImage.transform = inputImage.transform;
+  }
   return outputImage;
 }
 
@@ -252,6 +255,9 @@ function applyMaskCPU(
     }
   }
 
+  if (original.transform) {
+    result.transform = original.transform;
+  }
   return result;
 }
 
@@ -261,7 +267,6 @@ export const BlurNode = defineNode({
   name: 'Blur',
   description: 'Apply Gaussian blur to image',
   icon: 'blur_on',
-  hasLocalTransform: true,
   requiresSpatialCoherence: true,
 
   inputs: [
@@ -331,6 +336,10 @@ export const BlurNode = defineNode({
         context.gpu?.retainTexture(input.id);
         return { image: input };
       }
+      if (isFloatImage(input)) {
+        // Clone the FloatImage to avoid mutation
+        return { image: cloneFloatImage(input) };
+      }
       return {
         image: new ImageData(
           new Uint8ClampedArray((input as ImageData).data),
@@ -351,6 +360,9 @@ export const BlurNode = defineNode({
     // Try GPU path
     if (context.gpu?.isAvailable) {
       try {
+        // Preserve transform from input FloatImage (GPU textures can't store transform)
+        const inputTransform = isFloatImage(input) ? input.transform : undefined;
+
         const blurredTexture = executeGPU(input, effectiveRadius, sigma, context.gpu);
 
         // Apply mask blend on GPU if mask provided
@@ -362,9 +374,13 @@ export const BlurNode = defineNode({
 
         context.reportProgress(1);
 
-        if (params.preview) {
+        // If input had transform, we must download to preserve it (GPUTexture can't store transform)
+        if (params.preview || inputTransform) {
           const result = context.gpu.downloadTexture(finalTexture);
           context.gpu.releaseTexture(finalTexture.id);
+          if (inputTransform) {
+            result.transform = inputTransform;
+          }
           return { image: result };
         }
 

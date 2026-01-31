@@ -7,7 +7,6 @@ export const MergeChannelsNode = defineNode({
   name: 'Merge Channels',
   description: 'Merge RGBA channels into single image',
   icon: 'layers',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -95,6 +94,10 @@ export const MergeChannelsNode = defineNode({
 
     const { width, height } = referenceImage;
     const outputImage = createFloatImage(width, height);
+    // Preserve transform from reference image
+    if (referenceImage.transform) {
+      outputImage.transform = referenceImage.transform;
+    }
     const outData = outputImage.data;
 
     const redData = redImage?.data;

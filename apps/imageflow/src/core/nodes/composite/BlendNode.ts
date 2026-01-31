@@ -142,7 +142,6 @@ export const BlendNode = defineNode({
   name: 'Blend',
   description: 'Blend two images with various blend modes',
   icon: 'layers',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -272,6 +271,10 @@ export const BlendNode = defineNode({
     // Use base dimensions as output
     const { width, height } = baseImage;
     const outputImage = createFloatImage(width, height);
+    // Preserve transform from base image
+    if (baseImage.transform) {
+      outputImage.transform = baseImage.transform;
+    }
     const baseData = baseImage.data;
     const blendData = blendImage.data;
     const maskData = maskImage?.data;

@@ -8,7 +8,6 @@ export const ThresholdNode = defineNode({
   name: 'Threshold',
   description: 'Create mask from luminance threshold',
   icon: 'contrast',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -150,6 +149,11 @@ export const ThresholdNode = defineNode({
     const { width, height, data: srcData } = inputImage;
     const maskImage = createFloatImage(width, height);
     const outputImage = createFloatImage(width, height);
+    // Preserve transform from input
+    if (inputImage.transform) {
+      maskImage.transform = inputImage.transform;
+      outputImage.transform = inputImage.transform;
+    }
     const maskData = maskImage.data;
     const outData = outputImage.data;
 

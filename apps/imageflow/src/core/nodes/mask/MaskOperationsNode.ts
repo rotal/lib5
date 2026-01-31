@@ -7,7 +7,6 @@ export const MaskOperationsNode = defineNode({
   name: 'Mask Operations',
   description: 'Modify mask with expand, contract, feather, invert',
   icon: 'select_all',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -68,6 +67,10 @@ export const MaskOperationsNode = defineNode({
 
     if (operation === 'invert') {
       const outputMask = createFloatImage(width, height);
+      // Preserve transform from input
+      if (inputMask.transform) {
+        outputMask.transform = inputMask.transform;
+      }
       const outData = outputMask.data;
 
       for (let i = 0; i < srcData.length; i += 4) {
@@ -83,6 +86,10 @@ export const MaskOperationsNode = defineNode({
     if (operation === 'feather') {
       // Gaussian blur for feathering
       const outputMask = createFloatImage(width, height);
+      // Preserve transform from input
+      if (inputMask.transform) {
+        outputMask.transform = inputMask.transform;
+      }
       const outData = outputMask.data;
       const radius = Math.round(amount);
       const sigma = radius / 3;
@@ -137,6 +144,10 @@ export const MaskOperationsNode = defineNode({
     if (operation === 'expand' || operation === 'contract') {
       // Morphological operation (dilation/erosion)
       const outputMask = createFloatImage(width, height);
+      // Preserve transform from input
+      if (inputMask.transform) {
+        outputMask.transform = inputMask.transform;
+      }
       const outData = outputMask.data;
       const radius = Math.round(amount);
       const isExpand = operation === 'expand';

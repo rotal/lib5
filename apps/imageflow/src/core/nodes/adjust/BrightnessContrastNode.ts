@@ -8,7 +8,6 @@ export const BrightnessContrastNode = defineNode({
   name: 'Brightness/Contrast',
   description: 'Adjust image brightness and contrast',
   icon: 'brightness_6',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -69,11 +68,14 @@ export const BrightnessContrastNode = defineNode({
       // Get or create input texture
       let inputTexture: GPUTexture;
       let needsInputRelease = false;
+      // Preserve transform from input FloatImage (GPU textures can't store transform)
+      let inputTransform: import('../../../types/data').Transform2D | undefined;
 
       if (isGPUTexture(input)) {
         inputTexture = input;
       } else if (isFloatImage(input)) {
         inputTexture = gpu.createTextureFromFloat(input);
+        inputTransform = input.transform;
         needsInputRelease = true;
       } else {
         inputTexture = gpu.createTexture(input as ImageData);
@@ -97,10 +99,13 @@ export const BrightnessContrastNode = defineNode({
         gpu.releaseTexture(inputTexture.id);
       }
 
-      // Return GPU texture or download based on preview setting
-      if (preview) {
+      // If input had transform, we must download to preserve it (GPUTexture can't store transform)
+      if (preview || inputTransform) {
         const result = gpu.downloadTexture(outputTexture);
         gpu.releaseTexture(outputTexture.id);
+        if (inputTransform) {
+          result.transform = inputTransform;
+        }
         return { image: result };
       }
 
@@ -113,7 +118,7 @@ export const BrightnessContrastNode = defineNode({
       return { image: null };
     }
 
-    const { width, height, data: srcData } = inputImage;
+    const { width, height, data: srcData, transform } = inputImage;
     const outputImage = createFloatImage(width, height);
     const data = outputImage.data;
 
@@ -129,6 +134,9 @@ export const BrightnessContrastNode = defineNode({
       data[i + 3] = srcData[i + 3]; // preserve alpha
     }
 
+    if (transform) {
+      outputImage.transform = transform;
+    }
     return { image: outputImage };
   },
 });

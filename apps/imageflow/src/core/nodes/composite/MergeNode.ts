@@ -7,7 +7,6 @@ export const MergeNode = defineNode({
   name: 'Merge',
   description: 'Merge multiple images into one',
   icon: 'merge',
-  hasLocalTransform: true,
 
   inputs: [
     {

@@ -62,7 +62,6 @@ export const HueSaturationNode = defineNode({
   name: 'Hue/Saturation',
   description: 'Adjust hue, saturation, and lightness',
   icon: 'color_lens',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -131,11 +130,14 @@ export const HueSaturationNode = defineNode({
 
       let inputTexture: GPUTexture;
       let needsInputRelease = false;
+      // Preserve transform from input FloatImage (GPU textures can't store transform)
+      let inputTransform: import('../../../types/data').Transform2D | undefined;
 
       if (isGPUTexture(input)) {
         inputTexture = input;
       } else if (isFloatImage(input)) {
         inputTexture = gpu.createTextureFromFloat(input);
+        inputTransform = input.transform;
         needsInputRelease = true;
       } else {
         inputTexture = gpu.createTexture(input as ImageData);
@@ -156,9 +158,13 @@ export const HueSaturationNode = defineNode({
         gpu.releaseTexture(inputTexture.id);
       }
 
-      if (preview) {
+      // If input had transform, we must download to preserve it (GPUTexture can't store transform)
+      if (preview || inputTransform) {
         const result = gpu.downloadTexture(outputTexture);
         gpu.releaseTexture(outputTexture.id);
+        if (inputTransform) {
+          result.transform = inputTransform;
+        }
         return { image: result };
       }
 
@@ -173,6 +179,10 @@ export const HueSaturationNode = defineNode({
 
     const { width, height, data: srcData } = inputImage;
     const outputImage = createFloatImage(width, height);
+    // Preserve transform from input
+    if (inputImage.transform) {
+      outputImage.transform = inputImage.transform;
+    }
     const data = outputImage.data;
 
     for (let i = 0; i < srcData.length; i += 4) {

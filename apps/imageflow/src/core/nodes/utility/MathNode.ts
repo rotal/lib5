@@ -34,7 +34,6 @@ export const MathNode = defineNode({
   name: 'Math',
   description: 'Perform mathematical operations on numbers, images, or masks',
   icon: 'calculate',
-  hasLocalTransform: true,
 
   inputs: [
     {
@@ -135,6 +134,10 @@ export const MathNode = defineNode({
       if (!ref) return { result: null };
       const { width, height } = ref;
       const out = createFloatImage(width, height);
+      // Preserve transform from reference image
+      if (ref.transform) {
+        out.transform = ref.transform;
+      }
 
       const srcA = imgA?.data;
       const srcB = imgB?.data;
