@@ -38,6 +38,7 @@ export function PreviewViewport() {
   const [channelMode, setChannelMode] = useState<'rgba' | 'r' | 'g' | 'b' | 'a'>('rgba');
   const [previewBgMode, setPreviewBgMode] = useState<'check' | 'grid' | 'black'>('check');
   const [hudModes, setHudModes] = useState<Set<'viewport' | 'image' | 'transform' | 'borders'>>(new Set());
+  const [hudVisible, setHudVisible] = useState(true);
   const [hudDropdownOpen, setHudDropdownOpen] = useState(false);
   const [channelDropdownOpen, setChannelDropdownOpen] = useState(false);
   const [toolbarPinned, setToolbarPinned] = useState(false);
@@ -701,7 +702,7 @@ export function PreviewViewport() {
     if (showComparison) {
       // Draw background
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      if (hudModes.has('borders')) {
+      if (hudVisible && hudModes.has('borders')) {
         drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
       }
 
@@ -725,7 +726,7 @@ export function PreviewViewport() {
       }
       ctx.clip();
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
-      if (hudModes.has('borders')) {
+      if (hudVisible && hudModes.has('borders')) {
         drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
       }
       ctx.restore();
@@ -746,18 +747,18 @@ export function PreviewViewport() {
       ctx.stroke();
     } else if (hasBackground) {
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      if (hudModes.has('borders')) {
+      if (hudVisible && hudModes.has('borders')) {
         drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
       }
     } else if (hasForeground) {
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
-      if (hudModes.has('borders')) {
+      if (hudVisible && hudModes.has('borders')) {
         drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
       }
     }
 
     // Draw canvas border to indicate project resolution bounds (only in viewport HUD mode)
-    if (hudModes.has('viewport')) {
+    if (hudVisible && hudModes.has('viewport')) {
       ctx.strokeStyle = '#ffcc00';
       ctx.lineWidth = 2 / zoom;
       ctx.strokeRect(projectOffsetX, projectOffsetY, canvasSettings.width, canvasSettings.height);
@@ -1106,15 +1107,20 @@ export function PreviewViewport() {
             )}
           </div>
           {/* HUD mode dropdown */}
-          <div className="relative" ref={hudDropdownRef}>
+          <div
+            className="relative"
+            ref={hudDropdownRef}
+            onMouseEnter={() => setHudDropdownOpen(true)}
+            onMouseLeave={() => setHudDropdownOpen(false)}
+          >
             <button
-              onClick={() => setHudDropdownOpen(!hudDropdownOpen)}
+              onClick={() => setHudVisible(!hudVisible)}
               className={`flex items-center gap-1 px-2 py-1 text-xs rounded-md transition-colors ${
-                hudModes.size > 0
+                hudModes.size > 0 && hudVisible
                   ? 'bg-editor-surface-light text-editor-text'
                   : 'text-editor-text-dim hover:bg-editor-surface-light hover:text-editor-text'
               }`}
-              title="HUD overlay"
+              title={hudVisible ? 'Hide HUD' : 'Show HUD'}
             >
               <span className="font-medium">HUD</span>
             </button>
@@ -1239,7 +1245,7 @@ export function PreviewViewport() {
         />
 
         {/* HUD text overlay (only show if viewport, image, or transform modes are active - not just borders) */}
-        {(hudModes.has('viewport') || hudModes.has('image') || hudModes.has('transform')) && (
+        {hudVisible && (hudModes.has('viewport') || hudModes.has('image') || hudModes.has('transform')) && (
           <div className="absolute top-2 left-2 bg-black/80 text-green-400 text-[10px] px-3 py-2 rounded font-mono pointer-events-none space-y-0.5 max-w-[350px]">
             {hudModes.has('viewport') && (
               <>
