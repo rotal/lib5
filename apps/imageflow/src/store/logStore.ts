@@ -68,13 +68,11 @@ export const appLog = {
   clear: () => useLogStore.getState().clear(),
 };
 
-// Step 1: Just console.log, simple string only
+// Step 2: console.log, all args as strings
 const _origLog = console.log.bind(console);
 console.log = (...args: unknown[]) => {
   _origLog(...args);
-  // Only capture if first arg is string
-  if (typeof args[0] === 'string') {
-    useLogStore.getState().info(args[0]);
-  }
+  const msg = args.map(a => typeof a === 'string' ? a : String(a)).join(' ');
+  useLogStore.getState().info(msg);
 };
 
