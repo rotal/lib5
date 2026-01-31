@@ -706,13 +706,10 @@ export function PreviewViewport() {
     const backgroundSlotColor = PREVIEW_SLOT_COLORS[2]; // Slot 3 is always background
 
     if (showComparison) {
-      // Draw background
+      // Draw background image and border
       drawImage(backgroundImageData!, backgroundTransform, isBackgroundGizmoTarget);
-      if (hudVisible && bordersEnabled && borderModes.has('slot3')) {
-        drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
-      }
 
-      // Draw foreground with clip
+      // Draw foreground with clip (image only, not border)
       ctx.save();
       ctx.beginPath();
       if (previewSplitVertical) {
@@ -732,10 +729,15 @@ export function PreviewViewport() {
       }
       ctx.clip();
       drawImage(foregroundImageData!, foregroundTransform, isForegroundGizmoTarget);
+      ctx.restore();
+
+      // Draw borders after clipping is restored (so they're not cut)
+      if (hudVisible && bordersEnabled && borderModes.has('slot3')) {
+        drawImageBorder(backgroundImageData!, backgroundTransform, backgroundSlotColor);
+      }
       if (hudVisible && bordersEnabled && borderModes.has(previewForegroundSlot === 0 ? 'slot1' : 'slot2')) {
         drawImageBorder(foregroundImageData!, foregroundTransform, foregroundSlotColor);
       }
-      ctx.restore();
 
       // Draw split line
       ctx.strokeStyle = '#ffffff';
