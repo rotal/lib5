@@ -974,14 +974,21 @@ export function PreviewViewport() {
 
   return (
     <div
-      className="flex flex-col h-full bg-editor-bg outline-none"
+      className="relative flex flex-col h-full bg-editor-bg outline-none"
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
+      {/* Hover zone to show toolbar when hidden */}
+      {!toolbarPinned && (
+        <div
+          className="absolute top-0 left-0 right-0 h-6 z-20"
+          onMouseEnter={() => setToolbarHovered(true)}
+        />
+      )}
       {/* Toolbar */}
       <div
-        className={`flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl overflow-visible relative z-10 transition-all duration-200 ${
-          !toolbarPinned && !toolbarHovered ? '-translate-y-full opacity-0' : 'translate-y-0 opacity-100'
+        className={`absolute top-0 left-0 right-0 flex items-center justify-between px-3 py-2 border-b border-white/10 bg-editor-surface/40 backdrop-blur-xl overflow-visible z-10 transition-all duration-200 ${
+          !toolbarPinned && !toolbarHovered ? '-translate-y-full opacity-0 pointer-events-none' : 'translate-y-0 opacity-100'
         }`}
         onMouseEnter={() => setToolbarHovered(true)}
         onMouseLeave={() => setToolbarHovered(false)}
@@ -1199,13 +1206,6 @@ export function PreviewViewport() {
           </button>
         </div>
       </div>
-      {/* Hover zone to show toolbar when hidden */}
-      {!toolbarPinned && !toolbarHovered && (
-        <div
-          className="absolute top-0 left-0 right-0 h-8 z-10"
-          onMouseEnter={() => setToolbarHovered(true)}
-        />
-      )}
 
       {/* Canvas container */}
       <div
